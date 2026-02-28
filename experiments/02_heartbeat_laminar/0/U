@@ -1,0 +1,90 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Pulsatile laminar inlet — parabolic profile with time-varying centreline.
+//
+// Physics:
+//   For laminar (Hagen-Poiseuille) flow the velocity profile is parabolic:
+//       U(r, t) = U_center(t) · (1 − r²/R²)
+//   where r = sqrt(y² + z²) is the radial distance from the vessel axis.
+//
+//   The centreline velocity follows a sinusoidal cardiac waveform:
+//       U_center(t) = U_avg + A · sin(2π·t/T − π/2)
+//       U_avg = (U_max + U_min) / 2 = (0.5 + 0.05) / 2 = 0.275 m/s
+//       A     = (U_max − U_min) / 2 = (0.5 − 0.05) / 2 = 0.225 m/s
+//       T     = 0.857 s  (70 bpm)
+//   → t = 0   : U_center = 0.05 m/s  (end-diastole, minimum flow)
+//   → t = T/2 : U_center = 0.50 m/s  (peak systole, maximum flow)
+//
+//   U_mean(t) = U_center(t) / 2  (Poiseuille relation for a cylinder)
+//   Re_peak   = U_mean_peak · 2R / ν = 0.25 · 0.01 / 3.3e-6 ≈ 757  (laminar ✓)
+//
+// Note: codedFixedValue compiles a shared library at runtime (dlopen).
+//   OpenFOAM refuses this when running as root. Always start the Docker
+//   container with -u "$(id -u)":"$(id -g)" — see README §"Start the
+//   Docker Container".
+
+dimensions      [0 1 -1 0 0 0 0];
+
+internalField   uniform (0 0 0);
+
+boundaryField
+{
+    inlet
+    {
+        type            codedFixedValue;
+        value           uniform (0 0 0);
+        name            pulsatileParabolicInlet;
+
+        code
+        #{
+            const scalar t    = this->db().time().value();
+            const scalar R    = 0.005;    // vessel radius [m]
+            const scalar T    = 0.857;    // cardiac period [s]  (70 bpm)
+            const scalar Umax = 0.5;      // peak systolic centreline velocity [m/s]
+            const scalar Umin = 0.05;     // end-diastolic centreline velocity [m/s]
+            const scalar Uavg = 0.5*(Umax + Umin);   // 0.275 m/s
+            const scalar A    = 0.5*(Umax - Umin);   // 0.225 m/s
+
+            // Sinusoidal waveform: starts at diastole, peaks at t = T/2
+            const scalar Uc = Uavg + A*Foam::sin(2.0*M_PI/T*t - 0.5*M_PI);
+
+            const vectorField& cf = this->patch().Cf();
+            vectorField& field    = *this;
+
+            forAll(cf, i)
+            {
+                const scalar y  = cf[i].y();
+                const scalar z  = cf[i].z();
+                const scalar r2 = y*y + z*z;
+                // Parabolic profile: zero at wall (r = R), peak Uc at centre
+                field[i] = vector(Uc*(1.0 - r2/(R*R)), 0, 0);
+            }
+        #};
+    }
+
+    outlet
+    {
+        type            zeroGradient;
+    }
+
+    wall
+    {
+        type            noSlip;
+    }
+}
+
+// ************************************************************************* //

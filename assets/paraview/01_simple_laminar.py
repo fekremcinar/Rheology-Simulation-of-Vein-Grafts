@@ -1,30 +1,31 @@
 #!/usr/bin/env pvpython
 """
-Standard ParaView visualization — Rheology Simulation of Vein Grafts
-======================================================================
-Applies the standard pipeline to any OpenFOAM icoFoam case in this project:
+ParaView visualization — Experiment 01: Simple Laminar Flow
+============================================================
+Pipeline for experiment 01_simple_laminar (steady Poiseuille flow in a
+straight cylindrical vessel):
   1. Clip        — remove top half to expose the vessel interior
   2. Slice       — longitudinal midplane coloured by axial velocity (U_X)
-  3. StreamTracer — streamlines (reveals recirculation in junction/graft cases)
+  3. StreamTracer — streamlines
   4. Glyph       — velocity arrows on the slice
   5. PlotOverLine — U_X profile chart near the outlet (parabola validation)
+
+Layout: 3-D render on the left, velocity profile chart on the right.
 
 How to run
 ----------
 Option A — pvpython (command line, outside ParaView):
-    pvpython ~/Rheology-Simulation-of-Vein-Grafts/assets/paraview/standard_viz.py \\
-        --case ~/Rheology-Simulation-of-Vein-Grafts/run/01_simple_laminar \\
+    pvpython ~/Rheology-Simulation-of-Vein-Grafts/assets/paraview/01_simple_laminar.py \
+        --case ~/Rheology-Simulation-of-Vein-Grafts/run/01_simple_laminar \
         --radius 0.005
 
 Option B — ParaView Python Shell (Tools → Python Shell):
-    1. Edit CASE_DIR and RADIUS in the "── Macro defaults ──" section below.
-    2. Open the script in the Python Shell and click Run Script.
+    Open the script and click Run Script.
     The pipeline panels will appear directly in the ParaView layout.
 
-Option C — ParaView Macro (reuse with one click):
-    1. Edit CASE_DIR and RADIUS in the "── Macro defaults ──" section below.
-    2. Tools → Macros → Add new macro → select this file.
-    3. Click the macro from the Macros menu whenever you open a new case.
+Option C — ParaView Macro (one click):
+    Tools → Macros → Add new macro → select this file → OK.
+    Click the macro from the Macros menu.
 
 Parameters
 ----------
@@ -67,6 +68,20 @@ FOAM_FILE = os.path.join(CASE_DIR, CASE_NAME + '.foam')
 # ── ParaView API ──────────────────────────────────────────────────────────────
 from paraview.simple import *
 paraview.simple._DisableFirstRenderCameraReset()
+
+# ── Reset: close all open views and sources without saving ────────────────────
+# Gives a clean slate every time the macro is run, regardless of what was
+# previously open in the session.
+try:
+    ResetSession()
+except Exception:
+    try:
+        for _proxy in list(GetSources().values()):
+            Delete(_proxy)
+        for _view in GetViews():
+            Delete(_view)
+    except Exception:
+        pass
 
 # ── Load the OpenFOAM case ────────────────────────────────────────────────────
 print(f"\n[standard_viz] Loading: {FOAM_FILE}")
@@ -157,6 +172,12 @@ chartView   = CreateView('XYChartView')
 plotDisplay = Show(plotLine, chartView)
 # Show only U_X — the axial velocity component (the Poiseuille parabola)
 plotDisplay.SeriesVisibility = ['U_X']
+
+# ── Layout: RenderView left, XYChartView right ────────────────────────────────
+layout = GetLayout(renderView)
+layout.SplitHorizontal(0, 0.6)        # split root cell 60 % / 40 %
+layout.AssignView(1, renderView)       # left cell  → 3-D render
+layout.AssignView(2, chartView)        # right cell → line chart
 
 # ── Reset camera and render ───────────────────────────────────────────────────
 SetActiveView(renderView)

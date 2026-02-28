@@ -84,9 +84,15 @@ mkdir -p "$HOME/Rheology-Simulation-of-Vein-Grafts/run"
 
 ### 5. Start the Docker Container
 
+> **Important — always start as your own user, not root.**
+> OpenFOAM refuses to compile runtime boundary conditions (`codedFixedValue`)
+> when running as root. The `-u` flag passes your macOS user ID into the
+> container so OpenFOAM's security check passes.
+
 **Apple Silicon (M1/M2/M3):**
 ```bash
 docker run -it --rm \
+  -u "$(id -u)":"$(id -g)" \
   -v "$HOME/Rheology-Simulation-of-Vein-Grafts":/work \
   opencfd/openfoam-default:2512
 ```
@@ -94,8 +100,15 @@ docker run -it --rm \
 **Intel Mac (or if architecture issues arise):**
 ```bash
 docker run -it --rm --platform=linux/amd64 \
+  -u "$(id -u)":"$(id -g)" \
   -v "$HOME/Rheology-Simulation-of-Vein-Grafts":/work \
   opencfd/openfoam-default:2512
+```
+
+If you see **"Permission denied"** writing into `/work` (caused by files previously owned by root):
+```bash
+# Run this once on your Mac, outside Docker
+sudo chown -R "$(id -u)":"$(id -g)" "$HOME/Rheology-Simulation-of-Vein-Grafts"
 ```
 
 Once inside the container, verify OpenFOAM is loaded:
@@ -270,34 +283,90 @@ In a straight tube the streamlines will be straight and parallel. In future junc
 >
 > Instead of following the manual steps above on each time, you can run the pre-built visualisation script as a ParaView macro:
 >
-> 1. Open `assets/paraview/standard_viz.py` in a text editor and set `CASE_DIR` and `RADIUS` in the *"Macro defaults"* section at the top.
-> 2. Open ParaView GUI.
-> 3. **Tools → Macros → Add new macro** → select `assets/paraview/standard_viz.py` → **OK**.
-> 4. Click the macro from the **Macros** menu.
+> 1. Open ParaView GUI.
+> 2. **Tools → Macros → Add new macro** → select `assets/paraview/01_simple_laminar.py` → **OK**.
+> 3. Click the macro from the **Macros** menu.
 >
-> The macro builds the full pipeline automatically (Clip, Slice, StreamTracer, Glyph, Plot Over Line) and displays all views inside ParaView. To switch cases, update `CASE_DIR` in the file and re-run.
+> The macro builds the full pipeline automatically (Clip, Slice, StreamTracer, Glyph, Plot Over Line) and displays the 3-D render alongside the velocity profile chart inside ParaView.
+>
+> **Note:** Each time the macro runs it first closes **all currently open views and pipeline objects without saving**, then rebuilds everything from scratch. This ensures a clean session on every run.
+>
+> Each experiment has its own dedicated script under `assets/paraview/` following the same naming convention `<experiment_folder>.py`.
 
 ---
 
 ### Experiment 02 — Laminar Flow with Simulated Heartbeat
 
-**Goal:** Replace the constant inlet velocity with a pulsatile waveform that approximates a realistic cardiac cycle (heart rate ~70 bpm → period T = 0.857 s).
+**Goal:** Replace the constant inlet velocity with a pulsatile waveform that approximates a realistic cardiac cycle (heart rate ~70 bpm → period T = 0.857 s), while preserving the parabolic (Hagen-Poiseuille) velocity profile across the cross-section at every instant.
+
+#### Why a parabolic inlet profile?
+
+A uniform "plug" inlet would force the solver to develop the parabolic profile over an entry length, injecting unphysical momentum near the wall at each time step. Since the flow is laminar throughout, the physically correct inlet condition is the instantaneous Hagen-Poiseuille profile:
+
+```
+U(r, t) = U_center(t) · (1 − r²/R²)
+```
+
+where `r = √(y² + z²)` is the radial distance from the vessel axis.
+
+**Implementation note:** The inlet uses a `codedFixedValue` boundary condition that evaluates `U(r,t) = U_center(t)·(1 − r²/R²)` at every face centre on every time step. OpenFOAM compiles this to a shared library at runtime (`dlopen`), which it refuses to do when running as **root**. Always start the Docker container with `-u "$(id -u)":"$(id -g)"` (see §"Start the Docker Container").
 
 **Key Parameters:**
-- Same geometry as Experiment 01
-- Inlet boundary condition: time-varying velocity using a `codedFixedValue` or `uniformFixedValue` with waveform data
-- Waveform: simplified sinusoidal or lookup-table based on a physiological flow curve
-    - Peak systolic velocity: `U_max ≈ 0.5 m/s`
-    - End-diastolic velocity: `U_min ≈ 0.05 m/s`
-- Simulation duration: minimum 3 cardiac cycles to reach periodic steady state
+- Same geometry as Experiment 01 (R = 0.005 m, L = 0.1 m)
+- Cardiac waveform (sinusoidal approximation):
+  - Period: `T = 0.857 s` (70 bpm)
+  - Peak systolic centreline velocity: `U_max = 0.5 m/s`
+  - End-diastolic centreline velocity: `U_min = 0.05 m/s`
+  - `U_center(t) = 0.275 + 0.225 · sin(2π·t/T − π/2)`
+  - At `t = 0`: flow starts at diastole (0.05 m/s); peaks at `t = T/2` (0.50 m/s)
+- Mean velocity: `U_mean(t) = U_center(t) / 2` (Poiseuille relation for a cylinder)
+- Peak Reynolds number: `Re = U_mean_peak · 2R / ν = 0.25 · 0.01 / 3.3e-6 ≈ 757` (laminar ✓)
+- Simulation duration: 3 cardiac cycles (`endTime = 2.571 s`)
+- Time step: `deltaT = 0.002 s` → CFL ≈ 0.4 at peak velocity (< 1 ✓)
 
 **Solver:** `icoFoam`
 
 **New/Modified Files vs. Experiment 01:**
-- `0/U` — updated with pulsatile inlet profile
-- `system/controlDict` — updated `endTime` and `deltaT` for time-accurate simulation
+- `0/U` — `codedFixedValue` implementing the pulsatile parabolic profile (requires non-root Docker; see §"Start the Docker Container")
+- `system/controlDict` — updated `endTime` (2.571 s), `deltaT` (0.002 s), `writeInterval` (0.04 s)
+
+**Unchanged from Experiment 01:** `0/p`, `constant/transportProperties`, `system/blockMeshDict`, `system/fvSchemes`, `system/fvSolution`
 
 **Files location:** `experiments/02_heartbeat_laminar/`
+
+**To run:**
+```bash
+# Inside Docker container
+cp -r /work/experiments/02_heartbeat_laminar /work/run/
+cd /work/run/02_heartbeat_laminar
+blockMesh
+checkMesh
+icoFoam
+touch 02_heartbeat_laminar.foam   # For ParaView
+```
+
+> **One-click ParaView macro**
+>
+> 1. Open ParaView GUI.
+> 2. **Tools → Macros → Add new macro** → select `assets/paraview/02_heartbeat_laminar.py` → **OK**.
+> 3. Click the macro from the **Macros** menu.
+>
+> The macro opens three panels:
+> - **Left** — 3-D render (Clip + StreamTracer + Glyph) coloured by U_X
+> - **Top-right** — U_X velocity profile along the vessel diameter at the **outlet** (x = 90 mm); use **▶ Play** to animate through the cardiac cycle
+> - **Bottom-right** — U_X velocity profile along the vessel diameter at the **inlet** (x = 1 mm); animates in sync with the outlet chart for direct comparison
+>
+> **Note:** Each time the macro runs it first closes **all currently open views and pipeline objects without saving**, then rebuilds everything from scratch. This ensures a clean session on every run.
+
+**Expected result:**
+
+| Quantity | Expected value |
+|---|---|
+| Profile shape at inlet | Parabolic at all times (Hagen-Poiseuille) |
+| Peak centreline velocity | 0.5 m/s (at t ≈ T/2 each cycle) |
+| Min centreline velocity | 0.05 m/s (at t = 0, T, 2T, …) |
+| Peak Reynolds number | ≈ 757 (laminar ✓) |
+| Outlet profile shape | Parabola — unchanged from inlet (fully developed) |
 
 ---
 
@@ -455,8 +524,9 @@ These physiological values should be used consistently across all experiments:
 ## Running Experiments — General Workflow
 
 ```bash
-# 1. Start Docker container
+# 1. Start Docker container (non-root — required for codedFixedValue BCs)
 docker run -it --rm \
+  -u "$(id -u)":"$(id -g)" \
   -v "$HOME/Rheology-Simulation-of-Vein-Grafts":/work \
   opencfd/openfoam-default:2512
 
