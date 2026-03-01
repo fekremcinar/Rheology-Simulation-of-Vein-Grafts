@@ -14,24 +14,31 @@ A reference of technical and scientific terms, symbols, and annotations used thr
 | `R` | Generic vessel radius in formulae | m |
 | `L` | Venous graft length | m |
 | `U` | Velocity vector field | m/s |
+| `ū` | Cross-sectional mean (average) axial velocity | m/s |
 | `U_center(t)` | Centreline (peak) axial velocity at time _t_ | m/s |
-| `U_mean` | Cross-sectional mean velocity | m/s |
+| `U_mean` | Cross-sectional mean velocity (same as ū) | m/s |
 | `U_max` | Peak systolic centreline velocity (~0.5 m/s) | m/s |
 | `U_min` | End-diastolic centreline velocity (~0.05 m/s) | m/s |
+| `v(r)` | Axial velocity as a function of radial position | m/s |
+| `v_max` | Centreline (maximum) velocity in Poiseuille flow; `v_max = 2ū` | m/s |
 | `p` | Kinematic pressure field (`p/ρ` in icoFoam) | m²/s² |
+| `ΔP` | Pressure drop between inlet and outlet (`P_in − P_out`) | Pa |
+| `Q` | Volumetric flow rate (`Q = ū · πR²`) | m³/s |
 | `ρ` | Blood density (1060 kg/m³) | kg/m³ |
 | `μ` | Dynamic viscosity of blood (0.0035 Pa·s at 37°C) | Pa·s |
 | `ν` | Kinematic viscosity (`ν = μ/ρ ≈ 3.3×10⁻⁶`) | m²/s |
-| `Re` | Reynolds number (`Re = U·D/ν`) | — |
+| `Re` | Reynolds number (`Re = ū·D/ν`) | — |
 | `T` | Cardiac cycle period (0.857 s at 70 bpm) | s |
 | `t` | Simulation time | s |
 | `r` | Radial distance from vessel axis (`r = √(y²+z²)`) | m |
-| `WSS` | Wall Shear Stress | Pa |
+| `WSS` | Wall Shear Stress (`WSS = 4μū/R` for Poiseuille flow) | Pa |
+| `L_entry` | Hydrodynamic entry length (`≈ 0.06·Re·D`) | m |
+| `τ` | Viscous diffusion timescale (`τ = R²/ν`) | s |
 | `E` | Young's modulus of vessel wall material | Pa |
 | `ν_s` | Poisson's ratio of solid wall (≈ 0.45) | — |
 | `t_wall` | Vessel wall thickness | m |
 | `D` | Vessel diameter (`D = 2R`) | m |
-| `CFL` | Courant–Friedrichs–Lewy number | — |
+| `CFL` | Courant–Friedrichs–Lewy number (`= U·deltaT/deltaX`) | — |
 | `deltaT` | Simulation time step | s |
 
 ---
@@ -77,6 +84,21 @@ A reference of technical and scientific terms, symbols, and annotations used thr
 ---
 
 ## Fluid Mechanics Terms
+
+**Mean velocity (ū)**
+: The cross-sectional average of the axial velocity, equal to the volumetric flow rate divided by the cross-sectional area: `ū = Q / (πR²)`. For Poiseuille flow, `ū = v_max / 2`.
+
+**Pressure drop (ΔP)**
+: The difference in static pressure between the inlet and outlet of a flow segment: `ΔP = P_in − P_out`. For fully-developed Poiseuille flow: `ΔP = 8μūL/R²`. Note that OpenFOAM's `icoFoam` stores kinematic pressure `p = P/ρ`, so the actual pressure drop in Pa is `ΔP = (p_in − p_out) × ρ`.
+
+**Volumetric flow rate (Q)**
+: Volume of fluid passing through a cross-section per unit time: `Q = ū · πR²`. For Poiseuille flow: `Q = πR⁴ΔP / (8μL)`. Units: m³/s (or mL/s in physiological contexts).
+
+**Viscous diffusion timescale (τ)**
+: The characteristic time for viscous effects to propagate radially across the vessel: `τ = R²/ν`. In a transient simulation starting from rest, the flow approaches the fully-developed Poiseuille profile after roughly `t > τ`. For Experiment 01: `τ = (0.005)²/3.3×10⁻⁶ ≈ 7.6 s`.
+
+**Hydrodynamic entry length (L_entry)**
+: The axial distance from the inlet required for the velocity profile to transition from the inlet condition (e.g., uniform plug flow) to the fully-developed Poiseuille parabola. For laminar pipe flow: `L_entry ≈ 0.06 · Re · D`. If the tube is shorter than `L_entry`, the profile is still developing at the outlet.
 
 **Laminar flow**
 : Smooth, orderly flow in parallel layers with no lateral mixing. Characterised by Reynolds number `Re < 2300` in pipe flow.
@@ -132,6 +154,27 @@ A reference of technical and scientific terms, symbols, and annotations used thr
 
 ## OpenFOAM Terms
 
+**Finite Volume Method (FVM)**
+: The numerical technique used by OpenFOAM. The domain is divided into small polyhedral control volumes (cells). Conservation equations (mass, momentum) are integrated over each cell and converted to algebraic equations solved iteratively.
+
+**Control volume (cell)**
+: A small, fixed region of space in the mesh. Each cell stores field values (velocity, pressure) at its geometric centre. Fluxes are computed across cell faces.
+
+**Face**
+: A flat polygon forming the boundary between two adjacent cells (internal face), or between a cell and a boundary patch (boundary face). Used in OpenFOAM to compute fluxes between cells.
+
+**Face centre**
+: The geometric centroid of a mesh face. Boundary field values (e.g., velocity at the outlet) are associated with face centres of boundary faces, giving one sample point per boundary cell.
+
+**Hexahedral cell (hex cell)**
+: A cell with 6 quadrilateral faces and 8 vertices — the 3D equivalent of a cube. Preferred in structured meshes for accuracy and convergence. All cells in Experiments 01–07 are hexahedral.
+
+**Mesh grading**
+: Non-uniform spacing of cells within a block, controlled by an expansion ratio. Radial grading 4:1 toward the wall (used in Experiments 01–07) places smaller cells near the wall to resolve the steep velocity gradient in the boundary layer.
+
+**Structured mesh**
+: A mesh where cells are arranged in a regular, logically Cartesian grid (i, j, k indices). Offers better numerical accuracy than unstructured meshes for simple geometries. All experiments in this project use structured meshes generated by `blockMesh`.
+
 **blockMesh**
 : OpenFOAM utility that generates a structured hexahedral mesh from a `blockMeshDict` file.
 
@@ -153,6 +196,9 @@ A reference of technical and scientific terms, symbols, and annotations used thr
 **fvSchemes**
 : OpenFOAM dictionary specifying the discretisation schemes for gradient, divergence, and Laplacian operators.
 
+**Boundary condition (BC)**
+: A mathematical constraint applied at the boundary of the simulation domain (inlet, outlet, wall) that tells the solver the value or behaviour of a field at that surface. Common types used in this project: `fixedValue` (prescribes an exact value), `zeroGradient` (zero normal derivative — lets the field float freely), `noSlip` (sets velocity to zero at a wall), and `codedFixedValue` (user-defined expression compiled at runtime).
+
 **fvSolution**
 : OpenFOAM dictionary specifying linear solver settings (solver type, tolerances, relaxation factors) for each field.
 
@@ -170,6 +216,27 @@ A reference of technical and scientific terms, symbols, and annotations used thr
 
 **polyMesh**
 : The directory inside `constant/` where OpenFOAM stores the generated mesh files (`points`, `faces`, `cells`, `boundary`).
+
+**PISO / SIMPLE / PIMPLE algorithms**
+: Iterative pressure-velocity coupling algorithms used to solve the incompressible Navier-Stokes equations:
+- **SIMPLE** (Semi-Implicit Method for Pressure-Linked Equations) — steady-state solver.
+- **PISO** (Pressure-Implicit Split-Operator) — transient solver; used inside `icoFoam`.
+- **PIMPLE** — hybrid of PISO and SIMPLE; allows larger time steps with outer iterations; used inside `pimpleFoam`.
+
+**StreamTracer**
+: A ParaView filter that traces streamlines through a vector field (e.g., velocity `U`). Reveals flow patterns, recirculation zones, and secondary flows. Primary visualisation tool across all experiments.
+
+**Glyph**
+: A ParaView filter that renders arrows (or other shapes) at each point, oriented and scaled by a vector field. Used to display velocity direction and magnitude on a cross-section.
+
+**Plot Over Line**
+: A ParaView filter that samples a field along a straight line between two points and displays the result as an XY chart. Used to extract and verify the radial velocity profile (Hagen-Poiseuille parabola).
+
+**Clip**
+: A ParaView filter that cuts the geometry with a plane and displays only one half. Used to look inside the cylindrical vessel.
+
+**Slice**
+: A ParaView filter that extracts a 2D cross-section through the 3D domain along a specified plane. Used to visualise the velocity colour map on a mid-plane.
 
 **ParaView**
 : Open-source, multi-platform data analysis and visualisation application. Used to post-process and visualise OpenFOAM simulation results.
