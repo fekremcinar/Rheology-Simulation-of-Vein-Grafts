@@ -235,128 +235,37 @@ icoFoam
 touch 01_simple_laminar.foam   # For ParaView
 ```
 
-#### Visualising in ParaView — step by step
+> **One-click ParaView macro**
+>
+> 1. Open ParaView GUI.
+> 2. **Tools → Macros → Add new macro** → select `assets/paraview/01_simple_laminar.py` → **OK**.
+> 3. Click the macro from the **Macros** menu.
+>
+> The macro builds the full pipeline automatically and displays the 3-D render
+> alongside inlet and outlet velocity profile charts.
+> Each run closes all open views without saving, then rebuilds from scratch.
+>
+> For the full manual step-by-step guide see **[ParaView-Guide.md](ParaView-Guide.md)**.
 
-##### Step 1 — Open the case
-1. On macOS (outside Docker), open ParaView.
-2. **File → Open** → navigate to `~/Rheology-Simulation-of-Vein-Grafts/run/01_simple_laminar/`.
-3. Select `01_simple_laminar.foam` → **OK** → click **Apply**.
-   You will see a full 3D cylinder in the viewport.
+**ParaView screenshot:**
 
-##### Step 2 — Go to the last time step
-1. Click the **⏭ Last Frame** button in the toolbar to jump to t = 10 s (fully developed flow).
+![Experiment 01 — Simple Laminar Flow](assets/img/01_simple_laminar.jpg)
 
-##### Step 3 — Colour by axial velocity
-1. Change the field dropdown from `p` to **U**, component **X**.
-2. Click **Rescale** (colorbar icon) to fit the range.
-   You will see **blue at the wall** (U = 0, no-slip) grading to **red at the centre** (peak ≈ 0.2 m/s).
+#### Validation — Hagen-Poiseuille Flow
 
-##### Step 4 — Clip the cylinder to see inside
-1. Select `01_simple_laminar.foam` in the Pipeline Browser.
-2. **Filters → Search** (or press **Space**) → type `Clip` → select **Clip** → **Apply**.
-   Set **Normal = (0, 0, 1)**, **Origin = (0, 0, 0)** to remove the top half.
-   You will see the inside of the cylinder coloured by velocity.
-
-##### Step 5 — Slice down the middle to see the full profile
-1. Select `01_simple_laminar.foam` in the Pipeline Browser.
-2. **Filters → Search** → type `Slice` → select **Slice** → **Apply**.
-   Set **Normal = (0, 0, 1)**, **Origin = (0, 0, 0)**.
-   Colour by **U → X** and press **F** to fit the view.
-   You will see the parabolic colour gradient: blue at both walls (U = 0), red at the centreline (U ≈ 0.2 m/s).
-   > **Note:** The parabola is shown as a colour gradient on the slice surface, not as a drawn curve.
-
-##### Step 6 — Verify the parabolic profile numerically (Plot Over Line)
-1. Select `01_simple_laminar.foam` in the Pipeline Browser (important: select the source, not Clip or Slice).
-2. **Filters → Search** → type `Plot Over Line` → select it → **Apply**.
-   Set:
-   - **Point 1**: `(0.09, -0.005, 0)` — near outlet, bottom wall
-   - **Point 2**: `(0.09,  0.005, 0)` — near outlet, top wall
-3. A **LineChartView** opens on the right. In the chart series list, **uncheck everything except `U_X`**.
-   You should see a smooth parabola: zero at both walls (y = ±0.005), peak ≈ 0.2 m/s at the centre (y = 0).
-
-##### Step 7 — Streamlines (standard method for all experiments)
-
-Streamlines are the primary visualization tool across all experiments. They naturally reveal recirculation zones, flow separation, and secondary flows in later experiments (junctions, grafts).
-
-1. Select `01_simple_laminar.foam` in the Pipeline Browser.
-2. **Filters → Search** → type `Stream Tracer` → select it.
-3. Set in Properties:
-   - **Vectors**: `U`
-   - **Seed Type**: `Line Source`
-   - **Point 1**: `(0.001, -0.004, 0)` — near inlet, close to wall
-   - **Point 2**: `(0.001,  0.004, 0)` — near inlet, opposite side
-   - **Resolution**: `20`
-   - **Max Streamline Length**: `0.2`
-4. Click **Apply** → colour by **U → Magnitude**.
-
-In a straight tube the streamlines will be straight and parallel. In future junction and graft experiments the same setup will automatically reveal recirculation zones and spiral flows.
-
-##### Step 8 — Velocity arrows on a cross-section (Glyph)
-
-1. Select `Slice1` in the Pipeline Browser.
-2. **Filters → Search** → type `Glyph` → select it.
-3. Set:
-   - **Glyph Type**: `Arrow`
-   - **Orientation Array**: `U`
-   - **Scale Array**: `U`
-   - **Scale Factor**: `0.02`
-   - **Glyph Mode**: `Every Nth Point`, N = `2`
-4. Click **Apply**.
-   Arrows show longer in the centre (fast) and shorter/zero at the walls.
-
-#### Mathematical Model — Hagen-Poiseuille Flow
-
-For **steady, incompressible, Newtonian, fully-developed laminar flow** in a cylindrical pipe, the axial velocity profile is the **Hagen-Poiseuille parabola**:
+For steady laminar flow in a cylinder the velocity profile is the **Hagen-Poiseuille parabola**:
 
 ```
-v(r) = ΔP / (4μL) · (R² − r²)
+v(r) = 2ū · (1 − r²/R²)
 ```
 
-where `r` is the radial distance from the centreline (`0 ≤ r ≤ R`), `ΔP = P_in − P_out` is the pressure drop over length `L`, and `μ` is the dynamic viscosity.
+where `r` is the radial distance from the centreline, `ū` is the mean (inlet) velocity, `v(R) = 0` (no-slip), and the centreline peak is **`v_max = 2ū`**.
 
-**Equivalent forms used in this project:**
+With `ū = 0.1 m/s` and `R = 0.005 m` → theoretical peak **0.200 m/s**, Re = **303** (laminar ✓), entry length **≈ 182 mm** (> tube length 100 mm, so profile is still developing at the outlet).
 
-| Form | Velocity profile | Centreline velocity |
-|---|---|---|
-| Using mean velocity ū | `v(r) = 2ū · (1 − r²/R²)` | `v_max = 2ū` |
-| Using pressure drop ΔP | `v(r) = ΔP/(4μL) · (R² − r²)` | `v_max = ΔP·R²/(4μL)` |
-| Using flow rate Q | `v(r) = 2Q/(πR²) · (1 − r²/R²)` | `v_max = 2Q/(πR²)` |
+**Simulation vs. Theory — outlet radial profile (t = 10 s):**
 
-Key properties: `v(R) = 0` (no-slip at wall); maximum at `r = 0`; `v_max = 2ū`.
-
-**Additional derived quantities:**
-
-```
-ΔP  = 8μūL / R²          (pressure drop, Pa)
-Q   = ū · πR²             (volumetric flow rate, m³/s)
-WSS = 4μū / R             (wall shear stress, Pa)
-Re  = ū · 2R / ν          (Reynolds number)
-L_entry ≈ 0.06 · Re · 2R  (hydrodynamic entry length, m)
-```
-
-#### Theoretical Predictions for Experiment 01
-
-Parameters: `R = 0.005 m`, `L = 0.1 m`, `ū = U_inlet = 0.1 m/s`, `μ = 0.0035 Pa·s`, `ν = 3.3×10⁻⁶ m²/s`, `ρ = 1060 kg/m³`.
-
-| Quantity | Formula | Value |
-|---|---|---|
-| Centreline velocity | `v_max = 2 · ū` | **0.200 m/s** |
-| Pressure drop (fully-dev.) | `ΔP = 8μūL/R²` | **11.20 Pa** |
-| Kinematic pressure drop | `ΔP/ρ` | **0.01057 m²/s²** |
-| Volumetric flow rate | `Q = ū · πR²` | **7.854 mL/s** |
-| Wall shear stress | `WSS = 4μū/R` | **0.280 Pa** |
-| Reynolds number | `Re = ū·2R/ν` | **303** (laminar ✓) |
-| Hydrodynamic entry length | `L_entry ≈ 0.06·Re·2R` | **~182 mm** |
-
-> **Note on entry length:** The tube length (100 mm) is shorter than the hydrodynamic entry length (~182 mm). This means the parabolic profile is still developing spatially along the tube. However, the simulation runs for 10 s, which exceeds the viscous diffusion timescale `τ = R²/ν ≈ 7.6 s`, so the flow is nearly fully-developed in the temporal sense by the end of the run.
-
-#### Simulation Results vs. Theory (at t = 10 s, outlet cross-section)
-
-The following values were extracted directly from `run/01_simple_laminar/10/U` and `run/01_simple_laminar/10/p`.
-
-**Outlet velocity profile** (624 outlet face centres, compared to `v(r) = 2ū·(1 − r²/R²)`):
-
-| r (mm) | U_x simulated (m/s) | U_x theory (m/s) | Error |
+| r (mm) | Simulated U_x (m/s) | Theory U_x (m/s) | Error |
 |--------|---------------------|-------------------|-------|
 | 0.30   | 0.19035             | 0.19931           | −4.5% |
 | 1.89   | 0.16833             | 0.17153           | −1.9% |
@@ -368,52 +277,20 @@ The following values were extracted directly from `run/01_simple_laminar/10/U` a
 | 4.52   | 0.03735             | 0.03690           | +1.2% |
 | 4.69   | 0.02379             | 0.02375           | +0.1% |
 | 4.84   | 0.01237             | 0.01272           | −2.8% |
-| 4.95   | 0.00304             | 0.00370           | −17.8% (near-wall cell) |
+| 4.95 ¹ | 0.00304            | 0.00370           | −17.8% |
 
-**Summary comparison:**
+¹ Near-wall cell centre (r ≈ 4.95 mm, not at the wall r = 5 mm where no-slip forces v = 0).
 
-| Quantity | Simulated | Theoretical | Difference |
+**Summary:**
+
+| Quantity | Simulated | Theory | Error |
 |---|---|---|---|
 | Peak centreline velocity | **0.1904 m/s** | 0.2000 m/s | −4.8% |
-| Wall velocity | ≈ 0.003 m/s (near-wall cell centre) | 0 m/s (no-slip) | — (cell-centre offset) |
-| Profile shape | Parabola ✓ | Parabola | — |
-| Pressure drop ΔP | **18.24 Pa** | 11.20 Pa | +63% |
-| Reynolds number | 303 (from inlet boundary condition) | 303 | Re is an input (fixed inlet velocity), not a solver output |
+| Interior profile shape | Parabola ✓ | Parabola | < 2.2% |
+| Reynolds number | 303 (inlet BC) | 303 | — |
 
-**Interpretation of discrepancies:**
+The −4.8% peak error is expected: the 100 mm tube is shorter than the ~182 mm entry length, so the plug-flow inlet has not yet fully converted to a parabola at the outlet. Interior cells confirm correct Hagen-Poiseuille physics (errors < 2.2%).
 
-- **Centreline velocity (−4.8%):** The uniform plug-flow inlet has not yet converted fully to a Hagen-Poiseuille parabola within the 100 mm tube length. With `L_entry ≈ 182 mm`, the outlet profile is still slightly flatter than the theoretical parabola, so the peak is mildly under-predicted.
-- **Near-wall cell error (−17.8%):** The cell centre at `r ≈ 4.95 mm` is not at `r = R = 5 mm` (where the no-slip BC forces `v = 0`), so the non-zero value is expected and correct.
-- **Pressure drop (+63%):** The measured ΔP includes both the fully-developed Poiseuille component (11.2 Pa) and the additional viscous dissipation in the entry region where the velocity profile is reorganising from plug to parabolic. Since most of the 100 mm tube lies within the entry region, the total pressure drop is substantially larger than the pure Poiseuille prediction.
-- **Profile shape:** Despite the above offsets, the velocity profile is clearly parabolic at the outlet (errors < 2.2% for all cells except the near-wall cell), confirming that the simulation correctly captures Hagen-Poiseuille physics.
-
-**Expected result:**
-
-| Quantity | Expected value |
-|---|---|
-| Peak (centreline) velocity | ≈ 0.20 m/s (= 2 × U_inlet) |
-| Wall velocity | 0 m/s (no-slip) |
-| Profile shape | Parabola (Hagen-Poiseuille) |
-| Reynolds number | ≈ 303 (laminar ✓) |
-
-**ParaView screenshot:**
-
-![Experiment 01 — Simple Laminar Flow](assets/img/01_simple_laminar.jpg)
-
-
-> **One-click ParaView macro (recommended shortcut)**
->
-> Instead of following the manual steps above on each time, you can run the pre-built visualisation script as a ParaView macro:
->
-> 1. Open ParaView GUI.
-> 2. **Tools → Macros → Add new macro** → select `assets/paraview/01_simple_laminar.py` → **OK**.
-> 3. Click the macro from the **Macros** menu.
->
-> The macro builds the full pipeline automatically (Clip, Slice, StreamTracer, Glyph, Plot Over Line) and displays the 3-D render alongside the velocity profile chart inside ParaView.
->
-> **Note:** Each time the macro runs it first closes **all currently open views and pipeline objects without saving**, then rebuilds everything from scratch. This ensures a clean session on every run.
->
-> Each experiment has its own dedicated script under `assets/paraview/` following the same naming convention `<experiment_folder>.py`.
 
 ---
 

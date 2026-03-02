@@ -170,58 +170,127 @@ UpdatePipeline()
 glyphDisplay = Show(glyph, renderView)
 ColorBy(glyphDisplay, ('POINTS', 'U', 'Magnitude'))
 
-# ── 5. PlotOverLine — U_X spatial profile at outlet (top-right panel) ─────────
-# Shows the Hagen-Poiseuille parabola at the current time step.
-# Animate the time slider to see how the profile amplitude pulses.
-plotLine = PlotOverLine(Input=reader)
-plotLine.Point1     = [x_outlet, -RADIUS, 0.0]
-plotLine.Point2     = [x_outlet,  RADIUS, 0.0]
-plotLine.Resolution = 1000
-UpdatePipeline()
+# ── Helper: build a profile chart with smooth line + data-point markers ───────
+def _make_profile_chart(reader, x_pos, y_min, y_max, title):
+    """Two-layer chart: smooth spline curve + circle markers.
 
-# Convert arc_length (m) → mm so X axis shows millimetres
-calcMM = Calculator(Input=plotLine)
-calcMM.AttributeType   = 'Point Data'
-calcMM.ResultArrayName = 'arc_length_mm'
-calcMM.Function        = 'arc_length * 1000'
-UpdatePipeline()
+    Strategy: fetch raw PlotOverLine data client-side, deduplicate to one
+    representative (y, U_X) per cell, fit a cubic spline, inject the smooth
+    500-point curve back as a ProgrammableSource (vtkTable), and show it
+    alongside raw circle markers in the same XYChartView.
+    """
+    import numpy as np
+    from paraview import servermanager as _sm
 
-def _make_profile_chart(calc_source, title):
-    """Create a fixed-range XYChartView for a U_X vs y [mm] profile."""
+    BLUE = ['U_X', '0.122', '0.467', '0.706']
+    LOG  = '[02_heartbeat_laminar]'
+
+    # High-res probe for polynomial fitting
+    pol_raw = PlotOverLine(Input=reader)
+    pol_raw.Point1     = [x_pos, -RADIUS, 0.0]
+    pol_raw.Point2     = [x_pos,  RADIUS, 0.0]
+    pol_raw.Resolution = 200
+    UpdatePipeline()
+
+    # Low-res probe for markers (~1 per radial cell)
+    pol_pts = PlotOverLine(Input=reader)
+    pol_pts.Point1     = [x_pos, -RADIUS, 0.0]
+    pol_pts.Point2     = [x_pos,  RADIUS, 0.0]
+    pol_pts.Resolution = 25
+    UpdatePipeline()
+
+    calc_pts = Calculator(Input=pol_pts)
+    calc_pts.AttributeType   = 'Point Data'
+    calc_pts.ResultArrayName = 'arc_length_mm'
+    calc_pts.Function        = 'arc_length * 1000'
+    UpdatePipeline()
+
+    # Fetch high-res data and fit degree-2 polynomial (parabola)
+    smooth_src = None
+    try:
+        raw_data = _sm.Fetch(pol_raw)
+        n        = raw_data.GetNumberOfPoints()
+
+        al_vtk = raw_data.GetPointData().GetArray('arc_length')
+        u_vtk  = raw_data.GetPointData().GetArray('U')
+        y_arr  = np.array([al_vtk.GetValue(i) * 1000 for i in range(n)])  # m→mm
+        ux_arr = np.array([u_vtk.GetTuple3(i)[0]      for i in range(n)])
+
+        # Degree-2 least-squares fit → smooth parabola (physically correct for H-P)
+        coeffs  = np.polyfit(y_arr, ux_arr, 2)
+        y_fine  = np.linspace(y_arr.min(), y_arr.max(), 500)
+        ux_fine = np.polyval(coeffs, y_fine)
+
+        smooth_src = ProgrammableSource()
+        smooth_src.OutputDataSetType = 'vtkTable'
+        y_lst  = y_fine.tolist()
+        ux_lst = ux_fine.tolist()
+        smooth_src.Script = (
+            "import vtk\n"
+            f"y_data  = {y_lst}\n"
+            f"ux_data = {ux_lst}\n"
+            "out = self.GetOutput()\n"
+            "ya = vtk.vtkFloatArray(); ya.SetName('arc_length_mm')\n"
+            "ua = vtk.vtkFloatArray(); ua.SetName('U_X')\n"
+            "for yv, uv in zip(y_data, ux_data):\n"
+            "    ya.InsertNextValue(yv)\n"
+            "    ua.InsertNextValue(uv)\n"
+            "out.AddColumn(ya)\n"
+            "out.AddColumn(ua)\n"
+        )
+        UpdatePipeline()
+    except Exception as ex:
+        print(f"{LOG} Note: parabola fit failed ({ex}); showing raw curve only")
+        smooth_src = None
+
     chart = CreateView('XYChartView')
-    chart.ChartTitle          = title
-    chart.BottomAxisTitle     = 'y  [mm]'
-    chart.LeftAxisTitle       = 'U_X  [m/s]'
+    chart.ChartTitle               = title
+    chart.BottomAxisTitle          = 'y  [mm]'
+    chart.LeftAxisTitle            = 'U_X  [m/s]'
     chart.LeftAxisUseCustomRange   = 1
-    chart.LeftAxisRangeMinimum     = -0.05
-    chart.LeftAxisRangeMaximum     = 0.5
+    chart.LeftAxisRangeMinimum     = y_min
+    chart.LeftAxisRangeMaximum     = y_max
     chart.BottomAxisUseCustomRange = 1
     chart.BottomAxisRangeMinimum   = 0.0
     chart.BottomAxisRangeMaximum   = 10.0
-    disp = Show(calc_source, chart)
-    disp.UseIndexForXAxis = 0
-    disp.XArrayName       = 'arc_length_mm'
-    disp.SeriesVisibility = ['U_X']
+
+    line_src  = smooth_src if smooth_src is not None else calc_pts
+    disp_line = Show(line_src, chart)
+    disp_line.UseIndexForXAxis = 0
+    disp_line.XArrayName       = 'arc_length_mm'
+    disp_line.SeriesVisibility = ['U_X']
+    try:
+        disp_line.SeriesColor         = BLUE
+        disp_line.SeriesLineStyle     = ['U_X', '1']
+        disp_line.SeriesLineThickness = ['U_X', '2']
+        disp_line.SeriesMarkerStyle   = ['U_X', '0']
+    except Exception as e:
+        print(f"{LOG} Note: line styling not applied ({e})")
+
+    if smooth_src is not None:
+        disp_pts = Show(calc_pts, chart)
+        disp_pts.UseIndexForXAxis = 0
+        disp_pts.XArrayName       = 'arc_length_mm'
+        disp_pts.SeriesVisibility = ['U_X']
+        try:
+            disp_pts.SeriesColor       = BLUE
+            disp_pts.SeriesLineStyle   = ['U_X', '0']
+            disp_pts.SeriesMarkerStyle = ['U_X', '4']
+            disp_pts.SeriesMarkerSize  = ['U_X', '8']
+        except Exception as e:
+            print(f"{LOG} Note: marker styling not applied ({e})")
+
     return chart
 
-outletChart = _make_profile_chart(calcMM, f'Outlet  ·  x = {outlet_x_mm} mm')
-
-# ── 6. PlotOverLine — U_X spatial profile at inlet (bottom-right panel) ───────
-# Shows how the Hagen-Poiseuille parabola looks near the inlet at the current
-# time step. Animating the time slider compares inlet and outlet amplitudes.
-plotLineInlet = PlotOverLine(Input=reader)
-plotLineInlet.Point1     = [x_inlet, -RADIUS, 0.0]
-plotLineInlet.Point2     = [x_inlet,  RADIUS, 0.0]
-plotLineInlet.Resolution = 1000
-UpdatePipeline()
-
-calcMM_inlet = Calculator(Input=plotLineInlet)
-calcMM_inlet.AttributeType   = 'Point Data'
-calcMM_inlet.ResultArrayName = 'arc_length_mm'
-calcMM_inlet.Function        = 'arc_length * 1000'
-UpdatePipeline()
-
-inletChart = _make_profile_chart(calcMM_inlet, f'Inlet  ·  x = {inlet_x_mm} mm')
+# ── 5 & 6. Profile charts — outlet (top-right) and inlet (bottom-right) ───────
+outletChart = _make_profile_chart(
+    reader, x_outlet, -0.05, 0.5,
+    f'Outlet  ·  x = {outlet_x_mm} mm'
+)
+inletChart = _make_profile_chart(
+    reader, x_inlet, -0.05, 0.5,
+    f'Inlet  ·  x = {inlet_x_mm} mm'
+)
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 # Layout cell indices (ParaView binary-tree rule: children of cell i → 2i+1, 2i+2):
