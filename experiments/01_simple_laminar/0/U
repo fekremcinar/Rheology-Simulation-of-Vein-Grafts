@@ -14,8 +14,19 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Uniform inlet velocity: U = 0.1 m/s along x-axis
-// Re = U * (2r) / nu = 0.1 * 0.01 / 3.3e-6 ≈ 303  (laminar, Re << 2300)
+// Pressure-driven flow: velocity is NOT prescribed at the inlet.
+// The flow profile develops naturally from the inlet-to-outlet pressure
+// gradient set in 0/p (Δp = 0.084 mmHg).
+//
+// Expected steady-state (Hagen-Poiseuille):
+//   U_avg    = 0.1  m/s   (mean over cross-section)
+//   U_center = 0.2  m/s   (centreline peak of the parabola)
+//   Re       = U_avg · 2R / nu = 0.1 · 0.01 / 3.3e-6 ≈ 303  (laminar ✓)
+//
+// Compare with 01_simple_laminar which prescribes uniform U = 0.1 m/s at inlet:
+//   - Both should converge to the same fully-developed parabolic profile.
+//   - Entry length differs: pressure-driven allows natural profile development
+//     from the very first cell, whereas velocity-driven imposes a blunt profile.
 
 dimensions      [0 1 -1 0 0 0 0];
 
@@ -25,12 +36,14 @@ boundaryField
 {
     inlet
     {
-        type            fixedValue;
-        value           uniform (0.1 0 0);
+        // Velocity is free to develop from the pressure gradient.
+        // zeroGradient is the correct Neumann BC for a pressure-driven inlet.
+        type            zeroGradient;
     }
 
     outlet
     {
+        // Allow flow to exit without constraining the velocity profile.
         type            zeroGradient;
     }
 

@@ -14,6 +14,11 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// Pressure-driven variant of 01_simple_laminar.
+// Inlet: fixedValue p = 0.010566 m²/s² (= 11.2 Pa = 0.084 mmHg).
+// Outlet: fixedValue p = 0 (reference).
+// Expected steady-state: U_avg = 0.1 m/s, U_center = 0.2 m/s (Re ≈ 303).
+
 application     icoFoam;
 
 startFrom       startTime;
