@@ -1,0 +1,112 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Pressure-driven pulsatile laminar flow (compare with 02_heartbeat_laminar).
+//
+// icoFoam uses KINEMATIC pressure: p_kin = p_physical / rho  [m²/s²]
+//
+// ── Physiological absolute pressure ───────────────────────────────────────────
+// Blood pressure 80/120 mmHg is the ABSOLUTE arterial pressure, not a local
+// pressure drop across a vessel segment.  For a 10 cm artery segment both the
+// inlet and outlet sit at nearly the same high pressure; only the tiny local
+// viscous gradient (≈ 0.1 mmHg) drives flow.
+//
+// To reflect physiological values we add the mean arterial pressure (MAP) as a
+// shared reference to both boundaries:
+//
+//   MAP   = (120 + 80) / 2 = 100 mmHg  →  13332 Pa  →  12.577 m²/s²  (÷ρ)
+//   A_abs = (120 − 80) / 2 =  20 mmHg  →   2666 Pa  →   2.516 m²/s²
+//
+//   p_outlet(t)  =  MAP_kin + A_abs_kin · sin(2πt/T − π/2)
+//                   oscillates  80 ↔ 120 mmHg   (diastole ↔ systole)
+//
+//   p_inlet(t)   =  p_outlet(t)  +  Δp_local(t)
+//                   Δp_local = 4·ν·L/R² · U_center(t)  =  0.0528 · Uc(t)
+//                   ≈ 0.021–0.210 mmHg  (tiny viscous gradient that drives flow)
+//
+//   U_center(t) = 0.275 + 0.225·sin(2πt/0.857 − π/2)   [m/s]
+//   T    = 0.857 s  (70 bpm)
+//
+// At t = 0 (end-diastole, sin = −1):
+//   p_outlet(0) = 12.577 − 2.516 = 10.061 m²/s²  ≈ 80.0 mmHg
+//   Δp_local(0) = 0.0528 × 0.05  = 0.00264 m²/s² ≈  0.02 mmHg
+//   p_inlet(0)  = 10.061 + 0.003 = 10.064 m²/s²  ≈ 80.0 mmHg
+//
+// Note: codedFixedValue compiles a shared library at runtime.
+//   OpenFOAM refuses compilation when running as root. Always start Docker
+//   with:  docker run -u "$(id -u)":"$(id -g)" ...
+
+dimensions      [0 2 -2 0 0 0 0];
+
+// Initialise internal field to the diastolic MAP (80 mmHg kinematic).
+// For incompressible flow only the gradient matters, but this gives the
+// ParaView pressure colour-map a physiologically meaningful absolute scale.
+internalField   uniform 10.061;
+
+boundaryField
+{
+    inlet
+    {
+        // p_inlet(t) = p_outlet(t) + Δp_local(t)
+        // The MAP+pulse term (shared at both ends) cancels out; only Δp_local
+        // drives the parabolic Poiseuille velocity profile.
+        type            codedFixedValue;
+        value           uniform 10.064;   // end-diastole initial value [m²/s²]
+        name            pulsatilePressureInlet;
+
+        code
+        #{
+            const scalar t       = this->db().time().value();
+            const scalar T       = 0.857;    // cardiac period [s]
+            const scalar MAP_kin = 12.577;   // 100 mmHg in m²/s²  (÷ρ=1060)
+            const scalar A_kin   = 2.516;    //  20 mmHg in m²/s²
+            const scalar Uavg    = 0.275;    // mean centreline velocity [m/s]
+            const scalar Uamp    = 0.225;    // velocity amplitude [m/s]
+            const scalar coeff   = 0.0528;   // 4·ν·L/R²  [m/s]
+
+            const scalar phase  = 2.0*M_PI/T*t - 0.5*M_PI;
+            const scalar Uc     = Uavg + Uamp*Foam::sin(phase);
+            // Absolute inlet pressure = shared arterial waveform + local ΔP
+            operator==(scalar(MAP_kin + A_kin*Foam::sin(phase) + coeff*Uc));
+        #};
+    }
+
+    outlet
+    {
+        // p_outlet(t) = MAP + A_abs · sin(2πt/T − π/2)
+        // Represents the downstream arterial pressure oscillating 80 ↔ 120 mmHg.
+        type            codedFixedValue;
+        value           uniform 10.061;   // end-diastole initial value [m²/s²]
+        name            pulsatileOutlet;
+
+        code
+        #{
+            const scalar t       = this->db().time().value();
+            const scalar T       = 0.857;
+            const scalar MAP_kin = 12.577;   // 100 mmHg in m²/s²
+            const scalar A_kin   = 2.516;    //  20 mmHg in m²/s²
+
+            operator==(scalar(MAP_kin + A_kin*Foam::sin(2.0*M_PI/T*t - 0.5*M_PI)));
+        #};
+    }
+
+    wall
+    {
+        type            zeroGradient;
+    }
+}
+
+// ************************************************************************* //

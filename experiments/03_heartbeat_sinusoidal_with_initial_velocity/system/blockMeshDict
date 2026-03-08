@@ -1,0 +1,155 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      blockMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Full 3D cylinder — O-grid (butterfly) mesh
+//
+// The O-grid uses 5 hex blocks in the cross-section: 1 square centre block
+// and 4 outer blocks connecting the centre to the circular wall. Arc edges
+// make the outer boundary truly circular. This avoids the degenerate axis
+// of a wedge and gives a high-quality mesh suitable for 3D visualisation
+// and as a base for all future experiments (heartbeat, FSI, junction, graft).
+//
+// Coordinate system:
+//   x : flow direction  (0 → L = 0.1 m)
+//   y : horizontal      (-r → +r)
+//   z : vertical        (-r → +r)
+//
+// Key dimensions:
+//   r   = 0.005   m  — vessel radius
+//   a   = 0.0025  m  — inner square half-width  (= r/2)
+//   rS  = 0.003536 m  — wall-corner radius       (= r/√2, sits on circle)
+//   L   = 0.1     m  — vessel length
+//
+// Mesh resolution  (no performance concern — prioritise accuracy):
+//   Axial  (x) : 40 cells
+//   Core   (y,z): 12 × 12 cells in centre block
+//   Radial : 10 cells in each outer block, graded 4:1 toward the wall
+
+scale 1;
+
+vertices
+(
+    // ── Inlet plane  x = 0 ──────────────────────────────────────────────
+    // Inner square corners
+    ( 0      0.0025   -0.0025  )  //  0  inner  +y −z
+    ( 0      0.0025    0.0025  )  //  1  inner  +y +z
+    ( 0     -0.0025    0.0025  )  //  2  inner  −y +z
+    ( 0     -0.0025   -0.0025  )  //  3  inner  −y −z
+    // Wall corners (on the circle, at 45° intervals)
+    ( 0      0.003536 -0.003536)  //  4  wall  315°  (+y −z)
+    ( 0      0.003536  0.003536)  //  5  wall   45°  (+y +z)
+    ( 0     -0.003536  0.003536)  //  6  wall  135°  (−y +z)
+    ( 0     -0.003536 -0.003536)  //  7  wall  225°  (−y −z)
+
+    // ── Outlet plane  x = L ─────────────────────────────────────────────
+    // Inner square corners
+    ( 0.1    0.0025   -0.0025  )  //  8  inner  +y −z
+    ( 0.1    0.0025    0.0025  )  //  9  inner  +y +z
+    ( 0.1   -0.0025    0.0025  )  // 10  inner  −y +z
+    ( 0.1   -0.0025   -0.0025  )  // 11  inner  −y −z
+    // Wall corners
+    ( 0.1    0.003536 -0.003536)  // 12  wall  315°
+    ( 0.1    0.003536  0.003536)  // 13  wall   45°
+    ( 0.1   -0.003536  0.003536)  // 14  wall  135°
+    ( 0.1   -0.003536 -0.003536)  // 15  wall  225°
+);
+
+// Cross-section topology (looking from −x toward +x):
+//
+//       6 ─── 5
+//      / \   / \
+//     7   2─1   4
+//     |   │C│   |
+//     7   3─0   4
+//      \ /   \ /
+//       7 ─── 4
+//
+// C = centre block  (hex  3  0  1  2 / 11  8  9 10)
+// R = right  block  (hex  0  4  5  1 /  8 12 13  9)
+// T = top    block  (hex  1  5  6  2 /  9 13 14 10)
+// L = left   block  (hex  2  6  7  3 / 10 14 15 11)
+// B = bottom block  (hex  3  7  4  0 / 11 15 12  8)
+
+blocks
+(
+    // Centre — uniform cells
+    hex ( 3  0  1  2 11  8  9 10) (12 12 40) simpleGrading (1    1 1)
+
+    // Outer blocks — radial grading 4:1 toward the wall (i-direction)
+    hex ( 0  4  5  1  8 12 13  9) (10 12 40) simpleGrading (0.25 1 1)  // right
+    hex ( 1  5  6  2  9 13 14 10) (10 12 40) simpleGrading (0.25 1 1)  // top
+    hex ( 2  6  7  3 10 14 15 11) (10 12 40) simpleGrading (0.25 1 1)  // left
+    hex ( 3  7  4  0 11 15 12  8) (10 12 40) simpleGrading (0.25 1 1)  // bottom
+);
+
+// Circular arc edges — make the outer boundary a true cylinder
+edges
+(
+    // Inlet arcs (x = 0): each arc passes through the circle midpoint
+    arc  4  5 ( 0     0.005  0    )  // 315° → 45°   midpoint at   0° (right)
+    arc  5  6 ( 0     0      0.005)  // 45°  → 135°  midpoint at  90° (top)
+    arc  6  7 ( 0    -0.005  0    )  // 135° → 225°  midpoint at 180° (left)
+    arc  7  4 ( 0     0     -0.005)  // 225° → 315°  midpoint at 270° (bottom)
+
+    // Outlet arcs (x = L)
+    arc 12 13 ( 0.1   0.005  0    )
+    arc 13 14 ( 0.1   0      0.005)
+    arc 14 15 ( 0.1  -0.005  0    )
+    arc 15 12 ( 0.1   0     -0.005)
+);
+
+boundary
+(
+    inlet
+    {
+        type patch;
+        faces
+        (
+            (3 2 1 0)    // centre
+            (0 1 5 4)    // right
+            (1 2 6 5)    // top
+            (2 3 7 6)    // left
+            (3 0 4 7)    // bottom
+        );
+    }
+
+    outlet
+    {
+        type patch;
+        faces
+        (
+            (11  8  9 10)  // centre
+            ( 8 12 13  9)  // right
+            ( 9 13 14 10)  // top
+            (10 14 15 11)  // left
+            (11 15 12  8)  // bottom
+        );
+    }
+
+    wall
+    {
+        type wall;
+        faces
+        (
+            ( 4  5 13 12)  // right arc
+            ( 5  6 14 13)  // top arc
+            ( 6  7 15 14)  // left arc
+            ( 7  4 12 15)  // bottom arc
+        );
+    }
+);
+
+// ************************************************************************* //

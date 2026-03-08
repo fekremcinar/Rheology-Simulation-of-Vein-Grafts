@@ -1,0 +1,105 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Pressure-driven pulsatile flow: velocity is NOT prescribed at the boundary.
+// The parabolic profile develops naturally from the time-varying pressure
+// gradient set in 0/p.
+//
+// Expected steady periodic state (Hagen-Poiseuille):
+//   U_center(t) = 0.275 + 0.225·sin(2πt/0.857 − π/2)  [m/s]
+//   U_avg(t)    = U_center(t) / 2
+//   Re_peak     = U_avg_peak · 2R / ν
+//               = 0.25 · 0.01 / 3.3e-6  ≈ 757   (laminar ✓)
+//
+// Initial condition (t=0): Hagen-Poiseuille parabolic profile at the TIME-AVERAGED
+// centreline velocity (U_mean = 0.275 m/s), NOT at the instantaneous diastolic value.
+//
+// Why U_mean and not U_center(t=0) = 0.05 m/s?
+//   The Womersley number for this flow is Wo = R·sqrt(ω/ν) ≈ 7.5.
+//   At Wo >> 1, the viscous diffusion timescale (τ ≈ R²/(5.78·ν) ≈ 1.3 s ≈ 1.5 T)
+//   is much longer than one cardiac period.  Starting at the diastolic minimum
+//   forces the solver to ramp the mean flow up over 2-3 cycles before it reaches
+//   the periodic steady state — even though the profile shape is correct.
+//   Starting at U_mean instead places the initial flow at the centre of the
+//   oscillation range so the short Womersley-attenuated oscillations develop
+//   immediately around an already-correct mean, giving a near-flat Q(t) from
+//   the very first cycle.
+//
+//   Ux(y,z) = 0.275 · (1 − (y² + z²) / R²)   R = 0.005 m
+//   Q_init  = U_mean / 2 · π R² ≈ 10.8 mL/s  (= time-averaged flow rate)
+
+dimensions      [0 1 -1 0 0 0 0];
+
+internalField   #codeStream
+{
+    codeInclude
+    #{
+        #include "fvCFD.H"
+    #};
+
+    codeOptions
+    #{
+        -I$(LIB_SRC)/finiteVolume/lnInclude \
+        -I$(LIB_SRC)/meshTools/lnInclude
+    #};
+
+    codeLibs
+    #{
+        -lfiniteVolume \
+        -lmeshTools
+    #};
+
+    code
+    #{
+        const IOdictionary& d = static_cast<const IOdictionary&>(dict);
+        const fvMesh& mesh = refCast<const fvMesh>(d.db());
+
+        const scalar R       = 0.005;   // vessel radius [m]
+        const scalar Ucenter = 0.275;   // mean centreline velocity [m/s] (time-averaged)
+
+        vectorField field(mesh.nCells(), vector::zero);
+        forAll(mesh.C(), i)
+        {
+            const scalar y  = mesh.C()[i].y();
+            const scalar z  = mesh.C()[i].z();
+            const scalar r2 = y*y + z*z;
+            field[i] = vector(Ucenter*(1.0 - r2/(R*R)), 0, 0);
+        }
+        field.writeEntry("", os);
+    #};
+};
+
+boundaryField
+{
+    inlet
+    {
+        // Velocity develops freely from the pressure gradient.
+        type            zeroGradient;
+    }
+
+    outlet
+    {
+        // Allow flow to exit without constraining the velocity profile.
+        type            zeroGradient;
+    }
+
+    wall
+    {
+        type            noSlip;
+    }
+}
+
+// ************************************************************************* //
