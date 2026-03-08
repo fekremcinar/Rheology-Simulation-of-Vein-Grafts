@@ -1,8 +1,8 @@
 #!/usr/bin/env pvpython
 """
-ParaView visualization — Experiment 02: Heartbeat Laminar Flow
-==============================================================
-Pipeline for experiment 02_heartbeat_sinusoidal_no_initial_velocity (pulsatile Poiseuille flow):
+ParaView visualization — Experiment 05: Heartbeat Flow with Elastic Vessel Wall (FSI)
+======================================================================================
+Pipeline for experiment 05_heartbeat_elastic_vessel (Murgo pressure waveform + compliant wall):
   1. Clip         — remove top half to expose the vessel interior
   2. StreamTracer — streamlines coloured by U magnitude
   3. Glyph        — velocity arrows on the longitudinal slice
@@ -52,7 +52,7 @@ _IS_PVPYTHON = 'pvpython' in sys.executable
 
 # ── Macro defaults ────────────────────────────────────────────────────────────
 CASE_DIR = os.path.expanduser(
-    "~/Rheology-Simulation-of-Vein-Grafts/run/02_heartbeat_sinusoidal"
+    "~/Rheology-Simulation-of-Vein-Grafts/run/05_heartbeat_elastic_vessel"
 )
 RADIUS = 0.005  # vessel inner radius [m]
 

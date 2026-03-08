@@ -131,17 +131,18 @@ Install ParaView on macOS for result visualization:
 ~/Rheology-Simulation-of-Vein-Grafts/
 ├── experiments/           # Case definition files (tracked in this repo)
 │   ├── 01_simple_laminar/
-│   ├── 02_heartbeat_sinusoidal/
-│   ├── 02_heartbeat_laminar_p/
-│   ├── 03_elastic_vessel/
-│   ├── 04_vessel_junction/
-│   ├── 05_venous_graft/
-│   ├── 06_graft_length_study/
-│   └── 07_graft_radius_study/
+│   ├── 02_heartbeat_sinusoidal/               # no initial velocity — transient ramp-up
+│   ├── 03_heartbeat_sinusoidal_with_initial_velocity/  # parabolic IC — periodic-steady
+│   ├── 04_heartbeat_realistic_pressure/       # digitized Murgo (1980) aortic waveform
+│   ├── 05_heartbeat_elastic_vessel/           # FSI: compliant wall, pimpleFoam + dynamic mesh
+│   ├── 06_vessel_junction/
+│   ├── 07_venous_graft/
+│   ├── 08_graft_length_study/
+│   └── 09_graft_radius_study/
 └── run/                   # Solver outputs (NOT tracked — results only)
     ├── 01_simple_laminar/
     ├── 02_heartbeat_sinusoidal/
-    ├── 02_heartbeat_laminar_p/
+    ├── 03_heartbeat_sinusoidal_with_initial_velocity/
     └── ...
 ```
 
@@ -234,10 +235,10 @@ The 624 cells per cross-section also equals the number of faces on each end cap 
 # Inside Docker container
 cp -r /work/experiments/01_simple_laminar /work/run/
 cd /work/run/01_simple_laminar
+touch 01_simple_laminar.foam   # For ParaView
 blockMesh
 checkMesh
 icoFoam
-touch 01_simple_laminar.foam   # For ParaView
 ```
 
 > **One-click ParaView macro**
@@ -298,8 +299,80 @@ The −4.8% peak centreline error reflects the **O-grid mesh resolution** near t
 
 
 ---
-
 ### Experiment 02 — Laminar Flow with Sinusoidal Heartbeat
+
+**Goal:** Observe the **transient ramp-up from rest** to periodic-steady pulsatile blood flow. Identical pressure boundary conditions to Experiment 03 are applied (80–120 mmHg sinusoidal at 70 bpm), but the simulation starts from **zero velocity** (`internalField U = (0 0 0)`). Running for exactly **1 viscous diffusion timescale τ = R²/ν ≈ 7.6 s** shows the complete transient from rest to near-periodic-steady state.
+
+**Key Parameters:**
+- Same geometry and pressure BCs as Experiment 03 (`R = 0.005 m`, `L = 0.1 m`, 80–120 mmHg sinusoidal)
+- Initial condition: `internalField U = uniform (0 0 0)` — starts from complete rest
+- Simulation duration: 7.6 s (`endTime = 7.6`) — exactly 1 viscous diffusion timescale (τ = R²/ν ≈ 7.6 s), ≈ 8.9 cardiac cycles
+- Time step: `deltaT = 0.002 s`; write interval: `0.04 s` → 190 output snapshots (0, 0.04, …, 7.6 s)
+
+**Differences from Experiment 03:**
+
+| Setting | Experiment 02 | Experiment 03 |
+|---|---|---|
+| Initial velocity | `uniform (0 0 0)` — rest | Hagen-Poiseuille parabola (`U_center = 0.275 m/s`) |
+| End time | 7.6 s (1τ) | 7.6 s (1τ) |
+| Purpose | Observe transient ramp-up | Analyse periodic-steady waveform |
+
+**Solver:** `icoFoam`
+
+**Files location:** `experiments/02_heartbeat_sinusoidal/`
+
+**To run:**
+```bash
+# Inside Docker container
+cp -r /work/experiments/02_heartbeat_sinusoidal /work/run/
+cd /work/run/02_heartbeat_sinusoidal
+touch 02_heartbeat_sinusoidal.foam   # For ParaView
+blockMesh
+checkMesh
+icoFoam
+```
+
+> **One-click ParaView macro**
+>
+> 1. Open ParaView GUI.
+> 2. **Tools → Macros → Add new macro** → select `assets/paraview/02_heartbeat_sinusoidal.py` → **OK**.
+> 3. Click the macro from the **Macros** menu.
+>
+> The macro opens five panels:
+> - **Left** — 3-D render (Clip + StreamTracer + Glyph) coloured by U_X
+> - **Top-centre** — U_X velocity profile along the vessel diameter at the **outlet** (x = 90 mm); use **▶ Play** to animate through the transient
+> - **Bottom-centre** — U_X velocity profile along the vessel diameter at the **inlet** (x = 1 mm)
+> - **Top-right** — **Flow rate conservation** chart: Q_inlet (blue), Q_outlet (orange) in mL/s; green vertical line marks the current animation time
+> - **Bottom-right** — **Inlet / Outlet Pressure** chart: p_inlet (blue), p_outlet (red), prescribed waveform (grey dashed) in mmHg; y-axis starts at 0; green vertical line marks current time
+>
+> If the `postProcessing/` directory is absent the macro falls back to the three-panel layout.
+
+**ParaView screenshot:**
+
+![Experiment 02 — Laminar Flow with Sinusoidal Heartbeat](assets/img/02_heartbeat_sinusoidal.jpg)
+
+
+**Expected result:**
+
+| Quantity | Expected value |
+|---|---|
+| Q(t) at t = 0 | ≈ 0 mL/s (starting from rest) |
+| Q(t) at t = 7.6 s (1τ) | ≈ near periodic-steady mean (~10.7 mL/s) |
+| Pressure waveform | 80–120 mmHg from t = 0 (BCs applied immediately) |
+| Transient duration | ~7.6 s (= 1τ = R²/ν) |
+
+#### Validation
+
+The key validation is the shape of Q(t) over the 7.6 s run:
+
+**1. Flow rate ramp-up** — Q(t) must start near zero and increase monotonically in mean value, with sinusoidal oscillations superimposed at the cardiac frequency (70 bpm). The mean flow rate should approach the periodic-steady value (~10.7 mL/s from Experiment 03) by t ≈ 7.6 s.
+
+**2. Pressure applied immediately** — the inlet/outlet pressure probes should show the 80–120 mmHg oscillation from t = 0, confirming the boundary conditions are active from the start.
+
+**3. Comparison with Experiment 03** — at t ≈ 7.6 s, the Q(t) waveform and outlet velocity profile should be nearly indistinguishable from the periodic-steady cycles of Experiment 03. Any remaining difference quantifies the residual transient.
+
+---
+### Experiment 03 — Laminar Flow with Sinusoidal Heartbeat with Initial Velocity
 
 **Goal:** Simulate pulsatile blood flow using a **pressure-driven** approach: the outlet pressure oscillates sinusoidally between 80 mmHg (diastole) and 120 mmHg (systole) at 70 bpm, and the inlet pressure follows with an additional tiny local viscous drop (≈ 0.1 mmHg). The velocity field develops naturally from the imposed pressure gradient without prescribing it at the boundary.
 
@@ -322,47 +395,52 @@ In a real artery the heart generates a pressure gradient; the velocity profile i
   - Pressure: `≈ 80 mmHg` (= 10.061 m²/s² kinematic) diastolic baseline
 - Expected mean centreline velocity: `U_center(t) = 0.275 + 0.225 · sin(2π·t/T − π/2)` m/s (result, not prescribed)
 - Peak Reynolds number: `Re = U_mean_peak · 2R / ν = 0.25 · 0.01 / 3.3e-6 ≈ 757` (laminar ✓)
-- Simulation duration: 3 cardiac cycles (`endTime = 2.571 s`)
 - Time step: `deltaT = 0.002 s` → CFL ≈ 0.4 at peak velocity (< 1 ✓)
+- Simulation duration: 7.6 s (`endTime = 7.6`) — same time axis as Experiment 02, enabling direct Q(t) overlay comparison (≈ 8.9 cardiac cycles, = 1τ)
 
 **Solver:** `icoFoam`
 
 **New/Modified Files vs. Experiment 01:**
 - `0/U` — `internalField` set via `#codeStream` (Hagen-Poiseuille parabola, `U_center = 0.275 m/s`); inlet and outlet: `zeroGradient`; wall: `noSlip`
 - `0/p` — inlet and outlet use `codedFixedValue` with MAP + pulse waveform (requires non-root Docker; see §"Start the Docker Container"); `internalField` initialised to 80 mmHg (= 10.061 m²/s² kinematic)
-- `system/controlDict` — updated `endTime` (2.571 s), `deltaT` (0.002 s), `writeInterval` (0.04 s); added `functions` block with four post-processing objects (see Validation section below)
+- `system/controlDict` — updated `endTime` (7.6 s), `deltaT` (0.002 s), `writeInterval` (0.04 s); added `functions` block with four post-processing objects (see Validation section below)
 
 **Unchanged from Experiment 01:** `constant/transportProperties`, `system/blockMeshDict`, `system/fvSchemes`, `system/fvSolution`
 
-**Files location:** `experiments/02_heartbeat_sinusoidal/`
+**Files location:** `experiments/03_heartbeat_sinusoidal_with_initial_velocity/`
 
 **To run:**
 ```bash
 # Inside Docker container
-cp -r /work/experiments/02_heartbeat_sinusoidal /work/run/
-cd /work/run/02_heartbeat_sinusoidal
+cp -r /work/experiments/03_heartbeat_sinusoidal_with_initial_velocity /work/run/
+cd /work/run/03_heartbeat_sinusoidal_with_initial_velocity
+touch 03_heartbeat_sinusoidal_with_initial_velocity.foam   # For ParaView
 blockMesh
 checkMesh
 icoFoam
-touch 02_heartbeat_sinusoidal.foam   # For ParaView
 ```
 
 > **One-click ParaView macro**
 >
 > 1. Open ParaView GUI.
-> 2. **Tools → Macros → Add new macro** → select `assets/paraview/02_heartbeat_sinusoidal.py` → **OK**.
+> 2. **Tools → Macros → Add new macro** → select `assets/paraview/03_heartbeat_sinusoidal_with_initial_velocity.py` → **OK**.
 > 3. Click the macro from the **Macros** menu.
 >
 > The macro opens five panels:
 > - **Left** — 3-D render (Clip + StreamTracer + Glyph) coloured by U_X
 > - **Top-centre** — U_X velocity profile along the vessel diameter at the **outlet** (x = 90 mm); use **▶ Play** to animate through the cardiac cycle
 > - **Bottom-centre** — U_X velocity profile along the vessel diameter at the **inlet** (x = 1 mm); animates in sync with the outlet chart for direct comparison
-> - **Top-right** — **Flow rate conservation** chart: Q_inlet (blue), Q_outlet (orange), analytical Q(t) (grey dashed) in mL/s — all three traces must overlap
-> - **Bottom-right** — **Inlet / Outlet Pressure** chart: p_inlet (blue), p_outlet (red), prescribed analytical waveform (grey dashed) in mmHg — p_outlet oscillates 80–120 mmHg; p_inlet sits ≈ 0.1 mmHg above p_outlet
+> - **Top-right** — **Flow rate conservation** chart: Q_inlet (blue), Q_outlet (orange) in mL/s; green vertical line marks the current animation time
+> - **Bottom-right** — **Inlet / Outlet Pressure** chart: p_inlet (blue), p_outlet (red), prescribed analytical waveform (grey dashed) in mmHg; y-axis starts at 0; green vertical line marks current time
 >
 > If the `postProcessing/` directory is absent (run not yet complete), the macro falls back to the original three-panel layout automatically.
 >
 > **Note:** Each time the macro runs it first closes **all currently open views and pipeline objects without saving**, then rebuilds everything from scratch. This ensures a clean session on every run.
+
+**ParaView screenshot:**
+
+![Experiment 03 — Laminar Flow with Sinusoidal Heartbeat with Initial Velocity](assets/img/03_heartbeat_sinusoidal_with_initial_velocity.jpg)
+
 
 **Expected result:**
 
@@ -460,136 +538,210 @@ Both should match the prescribed analytical waveform. Converting to mmHg (× ρ 
 
 ---
 
-### Experiment 03 — Laminar Flow with Simulated Heartbeat
+### Experiment 04 — Laminar Flow with Realistic Arterial Pressure Waveform
 
-**Goal:** Replace the prescribed sinusoidal velocity inlet (Experiment 02) with a **pressure-driven** pulsatile simulation using physiologically realistic boundary conditions. The inlet and outlet pressures oscillate between 80 mmHg (diastole) and 120 mmHg (systole), closely matching measured arterial blood pressure, and the resulting velocity field is computed by the solver rather than prescribed.
+**Goal:** Replace the sinusoidal pressure approximation (Experiments 02–03) with a **real digitized arterial pressure waveform**. The outlet pressure follows the characteristic shape of a measured human aortic pressure pulse: rapid systolic upstroke, peak at 120 mmHg, gradual systolic decline, dicrotic notch (~93 mmHg as the aortic valve closes), and exponential diastolic decay back to 80 mmHg. The velocity field is computed by the solver.
 
-#### Why pressure-driven instead of velocity-prescribed?
+#### Waveform source
 
-In a real artery, the heart generates a pressure gradient; the velocity profile is a consequence, not a cause. Prescribing velocity at the inlet forces an exact waveform but cannot capture Womersley-effect deviations from the quasi-static Hagen-Poiseuille shape. A pressure-driven BC lets the solver naturally compute the Womersley-corrected velocity response.
+The pressure table is digitized from:
 
-**Key distinction from Experiment 02:**
+> Murgo JP, Westerhof N, Giolma JP, Altobelli SA. *Aortic input impedance in normal man: relationship to pressure wave forms.* Circulation. 1980;62(1):105–116. DOI: [10.1161/01.CIR.62.1.105](https://doi.org/10.1161/01.CIR.62.1.105)
 
-| BC | Experiment 02 | Experiment 03 |
+Subject: healthy young adult (28 years), 70 bpm, T = 0.857 s. The 21-point table (Δt ≈ 0.043 s) embedded in `0/p` captures the dicrotic notch that a pure sinusoid cannot represent:
+
+| t [s] | p [mmHg] | Feature |
 |---|---|---|
-| Inlet velocity | `codedFixedValue` (parabolic waveform) | `zeroGradient` (velocity is a result) |
-| Inlet pressure | `zeroGradient` | `codedFixedValue` (MAP + local ΔP) |
-| Outlet velocity | `zeroGradient` | `zeroGradient` |
-| Outlet pressure | `fixedValue 0` | `codedFixedValue` (80→120 mmHg pulse) |
+| 0.000 | 80 | end-diastole |
+| 0.043 | 81 | |
+| 0.086 | 92 | rapid upstroke |
+| 0.129 | 110 | |
+| 0.171 | 120 | **systolic peak** |
+| 0.214 | 118 | |
+| 0.257 | 113 | |
+| 0.300 | 107 | |
+| 0.343 | 102 | |
+| 0.386 | 97 | |
+| 0.429 | 93 | **dicrotic notch** (aortic valve closure) |
+| 0.471 | 96 | dicrotic wave (rebound) |
+| 0.514 | 92 | |
+| 0.557 | 89 | |
+| 0.600 | 87 | diastolic decay |
+| 0.643 | 85 | |
+| 0.686 | 83 | |
+| 0.729 | 82 | |
+| 0.771 | 81 | |
+| 0.814 | 80 | |
+| 0.857 | 80 | = t = 0 (periodic) |
+
+MAP ≈ 94.4 mmHg (physiological value for 120/80: ~93 mmHg ✓).
 
 **Key Parameters:**
-- Same geometry as Experiments 01–02 (`R = 0.005 m`, `L = 0.1 m`)
-- Cardiac period: `T = 0.857 s` (70 bpm)
-- Outlet pressure waveform: `p_outlet(t) = 100 + 20 · sin(2π·t/T − π/2)` mmHg
-  - MAP (Mean Arterial Pressure): 100 mmHg (kinematic: `MAP_kin = 12.577 m²/s²`)
-  - Amplitude A: 20 mmHg (kinematic: `A_kin = 2.516 m²/s²`)
-  - Diastole (t = 0, T, …): 80 mmHg; Systole (t = T/2): 120 mmHg
-- Inlet pressure: `p_inlet = p_outlet + Δp_local(t)` where `Δp_local ≈ 0.02–0.21 mmHg` (tiny Hagen-Poiseuille gradient)
-- Initial conditions:
-  - Velocity: Hagen-Poiseuille parabola with `U_center = 0.275 m/s` (time-averaged mean) — set via `#codeStream` in `internalField` to avoid slow viscous ramp-up transient
-  - Pressure: `≈ 80 mmHg` (= 10.061 m²/s² kinematic) diastolic baseline
-- Simulation duration: 3 cardiac cycles (`endTime = 2.571 s`)
+- Same geometry and solver as Experiments 02–03 (`R = 0.005 m`, `L = 0.1 m`, `icoFoam`)
+- Outlet BC: `codedFixedValue` with 21-point linear interpolation table + periodic wrapping (Murgo aortic waveform, 80–120 mmHg)
+- Inlet BC: same table + pulsatile Δp(t) = `8·ν·L/R²·U_avg(t)` = `0.1056·[0.1375 + 0.1125·sin(2πt/T − π/2)]` m²/s² (Hagen-Poiseuille driven gradient, 0.02–0.21 mmHg)
+- Both inlet and outlet track realistic physiological absolute pressure (80–120 mmHg); the tiny pulsatile gradient drives pulsatile flow
+- Initial condition: Hagen-Poiseuille parabola at `U_center = 0.275 m/s` (mean arterial flow)
+- `internalField p` initialised to 80 mmHg (= 10.061 m²/s² kinematic)
+- Simulation duration: 10 s, `deltaT = 0.002 s`, `writeInterval = 0.04 s`
 
-**Womersley number and expected velocity response:**
-
-The Womersley number characterises the ratio of oscillatory to viscous timescales:
-
-```
-Wo = R · √(ω/ν) = 0.005 · √(2π/0.857 / 3.3e-6) ≈ 7.45
-```
-
-At Wo ≈ 7.45 the oscillatory velocity amplitude is only ~14% of the quasi-steady Hagen-Poiseuille value. The mean (time-averaged) velocity dominates; the outlet flow rate oscillates but does not drop to zero. This is correct physical behaviour — **not** a simulation artefact.
-
-| Quantity | Value |
-|---|---|
-| Mean centreline velocity | 0.275 m/s |
-| Oscillatory amplitude (Womersley) | ±0.032 m/s |
-| Mean flow rate | ≈ 10.8 mL/s |
-| Peak Reynolds number | ≈ 757 (laminar ✓) |
-
-**Solver:** `icoFoam`
-
-**New/Modified Files vs. Experiment 01:**
-- `0/U` — `internalField` set via `#codeStream` (parabolic, mean velocity); inlet/outlet: `zeroGradient`; wall: `noSlip`
-- `0/p` — both inlet and outlet use `codedFixedValue` with physiological MAP + pulse waveform; `internalField` initialised to 80 mmHg (= 10.061 m²/s² kinematic)
-- `system/controlDict` — `endTime = 2.571 s`, `deltaT = 0.002 s`; `functions` block with `flowRateInlet`, `flowRateOutlet`, `pressureProbes` post-processing
-
-**Files location:** `experiments/02_heartbeat_laminar_p/`
+**Files location:** `experiments/04_heartbeat_realistic_pressure/`
 
 **To run:**
 ```bash
 # Inside Docker container
-cp -r /work/experiments/02_heartbeat_laminar_p /work/run/
-cd /work/run/02_heartbeat_laminar_p
+cp -r /work/experiments/04_heartbeat_realistic_pressure /work/run/
+cd /work/run/04_heartbeat_realistic_pressure
+touch 04_heartbeat_realistic_pressure.foam   # For ParaView
 blockMesh
 checkMesh
 icoFoam
-touch 02_heartbeat_laminar_p.foam   # For ParaView
 ```
 
 > **One-click ParaView macro**
 >
 > 1. Open ParaView GUI.
-> 2. **Tools → Macros → Add new macro** → select `assets/paraview/02_heartbeat_laminar_p.py` → **OK**.
+> 2. **Tools → Macros → Add new macro** → select `assets/paraview/04_heartbeat_realistic_pressure.py` → **OK**.
 > 3. Click the macro from the **Macros** menu.
 >
-> The macro opens five panels:
-> - **Left** — 3-D render (Clip + StreamTracer + Glyph) coloured by U_X
-> - **Top-centre** — U_X velocity profile along the vessel diameter at the **outlet** (x = 90 mm)
-> - **Bottom-centre** — U_X velocity profile along the vessel diameter at the **inlet** (x = 1 mm)
-> - **Top-right** — **Flow rate conservation** chart: Q_inlet (blue), Q_outlet (orange), analytical Q(t) (grey dashed) in mL/s
-> - **Bottom-right** — **Inlet / Outlet Pressure** chart: p_inlet (blue), p_outlet (red), prescribed analytical waveform (grey dashed) in mmHg — all three traces should overlap closely (inlet sits ≈0.1 mmHg above outlet)
+> Same five-panel layout as Experiments 02–03. The **bottom-right** pressure chart will now show the characteristic asymmetric waveform with the dicrotic notch instead of a smooth sinusoid.
+
+**ParaView screenshot:**
+
+![Experiment 04 — Laminar Flow with Realistic Arterial Pressure Waveform](assets/img/04_heartbeat_realistic_pressure.jpg)
 
 **Expected result:**
 
 | Quantity | Expected value |
 |---|---|
-| Outlet pressure waveform | 80–120 mmHg sinusoid |
-| Inlet pressure | ≈ outlet + 0.02–0.21 mmHg |
-| Mean flow rate | ≈ 10.8 mL/s (≈ physiological at rest) |
+| Outlet pressure shape | Asymmetric pulse with dicrotic notch at t ≈ 0.43 s |
+| Systolic peak | 120 mmHg at t ≈ 0.17 s |
+| Dicrotic notch | ≈ 93 mmHg at t ≈ 0.43 s |
+| Diastolic minimum | 80 mmHg |
+| MAP | ≈ 94.4 mmHg |
+| Mean flow rate | ≈ 10.8 mL/s |
 | Peak Reynolds number | ≈ 757 (laminar ✓) |
-| Velocity oscillation amplitude | ±0.032 m/s (Womersley-limited at Wo ≈ 7.45) |
+| Womersley number | Wo ≈ 7.45 — velocity oscillation attenuated ~14% vs quasi-steady |
 
 #### Validation
 
-**1. Pressure waveform** (`pressureProbes`)
+**1. Pressure shape** — the extrapolated `p_outlet_sim` (red) from `pressureProbes` must reproduce the 21-point table waveform, including the dicrotic notch. Compare against Experiment 03's smooth sinusoid to see the difference.
 
-Two pressure probes at `x = 0.02375 m` and `x = 0.07375 m` are placed inside the domain. Inlet and outlet pressures are linearly extrapolated from the probe readings. Both should match the prescribed analytical waveform within numerical tolerance.
+**2. Flow rate** — `Q_inlet ≈ −Q_outlet` at every step (mass conservation). The Q(t) shape will differ from Experiment 03: a sharper systolic peak followed by a flatter diastolic plateau.
 
-**2. Flow rate conservation** (`flowRateInlet`, `flowRateOutlet`)
-
-`Q_inlet + Q_outlet ≈ 0` at every time step (incompressibility). Any persistent drift indicates a mass-conservation error.
-
-**3. Periodic convergence**
-
-Overlay cycle 2 and cycle 3 pressure and flow-rate traces in the ParaView chart — the two cycles must be indistinguishable, confirming periodic steady state is reached.
+**3. Periodic convergence** — cycle-to-cycle waveform overlap (any two successive cycles must be indistinguishable after cycle 1).
 
 ---
 
-### Experiment 04 — Heartbeat Flow with Elastic Vessel Wall (FSI)
+### Experiment 05 — Heartbeat Flow with Elastic Vessel Wall (FSI)
 
-**Goal:** Account for the natural compliance of blood vessel walls. Unlike rigid-wall simulations, an elastic vessel expands and contracts with each pulse, significantly affecting flow patterns and wall shear stress.
+**Goal:** Add **vessel wall compliance** to the realistic pressure-driven flow of Experiment 04. Unlike rigid-wall simulations (Exps 01–04), the vessel now expands radially during systole and contracts during diastole. This captures the key physiological phenomenon of arterial compliance and its effect on instantaneous flow rate and wall shear stress.
 
-**Approach:** Fluid-Structure Interaction (FSI) using OpenFOAM's `solidDisplacementFoam` or coupling with `solids4foam` library.
+#### Structural model
+
+A **thin-shell (Lamé) compliance** model relates transmural pressure to radial wall displacement:
+
+```
+δR(t) = Δp(t) · R² / (E · h)
+```
+
+| Symbol | Value | Unit | Description |
+|--------|-------|------|-------------|
+| `Δp(t)` | `p(t) − 80 mmHg` | Pa | Transmural pressure above diastolic reference |
+| `R` | 0.005 | m | Vessel radius |
+| `E` | 0.5 | MPa | Young's modulus (representative human artery) |
+| `h` | 1.0 | mm | Wall thickness (h/R = 0.2) |
+
+At systolic peak (Δp = 40 mmHg ≈ 5 333 Pa): **δR_max ≈ 0.267 mm (≈ 5.3 % of R)**, consistent with in-vivo arterial diameter oscillations of 5–10 %.
+
+Wall elasticity reference:
+> Holzapfel GA, Ogden RW. *Constitutive modelling of arteries.* Proc. Royal Society A. 2010;466:1551–1597. doi:[10.1098/rspa.2009.0357](https://doi.org/10.1098/rspa.2009.0357) (open access — typical arterial E = 0.1–3 MPa)
+
+#### Implementation (one-way FSI)
+
+| Component | Implementation |
+|-----------|---------------|
+| Fluid solver | `pimpleFoam` (ALE moving-mesh formulation) |
+| Mesh motion | `displacementLaplacian` (smoothly propagates wall motion to interior) |
+| Structure | Thin-shell model — prescribed displacement, no structural solver |
+| Coupling direction | Pressure → wall displacement → mesh motion → flow (one-way) |
+| Wall velocity BC | `movingWallVelocity` (no-slip in the moving-wall frame) |
+
+The wall displacement at each mesh point is computed by `codedFixedValue` in `0/pointDisplacement` using the same 21-point Murgo table as `0/p`, ensuring the structural driver is phase-consistent with the fluid pressure boundary condition.
 
 **Key Parameters:**
-- Vessel wall thickness: `t_wall = 0.001 m` (1 mm)
-- Wall material: linear elastic, Young's modulus `E ≈ 0.5–1.0 MPa` (arterial tissue range)
-- Poisson's ratio: `ν_s ≈ 0.45` (nearly incompressible)
-- Pulsatile inlet: same waveform as Experiment 02
 
-**Additional Files vs. Experiment 02:**
-- `constant/solidProperties` — wall material definition
-- Separate fluid and solid mesh regions in `constant/`
-- `system/fvSolution` — updated for coupled FSI solver
+| Parameter | Value |
+|-----------|-------|
+| Geometry | Same as Experiments 01–04: R = 0.005 m, L = 0.1 m |
+| Solver | `pimpleFoam` + `dynamicMotionSolverFvMesh` |
+| Mesh motion | `displacementLaplacian`, uniform diffusivity |
+| Wall Young's modulus | E = 0.5 MPa |
+| Wall thickness | h = 1 mm |
+| Simulation duration | 7.6 s (= τ = R²/ν), 190 snapshots |
 
-**Note:** This experiment is significantly more complex. A simplified approach using a moving-wall boundary (`movingWallVelocity`) may be used as an intermediate step before full FSI.
+**Additional files vs. Experiment 04:**
 
-**Files location:** `experiments/03_elastic_vessel/`
+| File | Purpose |
+|------|---------|
+| `constant/dynamicMeshDict` | Enables dynamic mesh; sets `displacementLaplacian` solver |
+| `0/pointDisplacement` | Wall BC: thin-shell δR(t) from Murgo waveform; inlet/outlet clamped |
+
+**Modified files vs. Experiment 04:**
+
+| File | Change |
+|------|--------|
+| `system/controlDict` | `application pimpleFoam` |
+| `system/fvSolution` | `PISO` → `PIMPLE`; added `cellDisplacement` solver; `correctPhi yes` |
+| `0/U` | Wall BC `noSlip` → `movingWallVelocity` |
+
+**Files location:** `experiments/05_heartbeat_elastic_vessel/`
+
+**To run:**
+```bash
+# Inside Docker container
+cp -r /work/experiments/05_heartbeat_elastic_vessel /work/run/
+cd /work/run/05_heartbeat_elastic_vessel
+touch 05_heartbeat_elastic_vessel.foam   # For ParaView
+blockMesh
+checkMesh
+pimpleFoam
+```
+
+> **One-click ParaView macro**
+>
+> 1. Open ParaView GUI.
+> 2. **Tools → Macros → Add new macro** → select `assets/paraview/05_heartbeat_elastic_vessel.py` → **OK**.
+> 3. Click the macro from the **Macros** menu.
+>
+> Same five-panel layout as Experiments 02–04.
+
+**ParaView screenshot:**
+
+![Experiment 05 — Heartbeat Flow with Elastic Vessel Wall](assets/img/05_heartbeat_elastic_vessel.jpg)
+
+
+**Expected results:**
+
+| Quantity | Rigid wall (Exp 04) | Elastic wall (Exp 05) |
+|----------|--------------------|-----------------------|
+| Wall displacement | 0 | 0–0.267 mm (radial) |
+| Systolic Q_outlet | ≈ 10.8 mL/s | slightly higher (wall expands, stores volume) |
+| Diastolic Q_outlet | ≈ 10.8 mL/s | slightly lower (wall recoils, releases stored volume) |
+| WSS at systole | ≈ 0.38 Pa | slightly lower (larger effective radius) |
+| WSS at diastole | ≈ 0.38 Pa | slightly higher (smaller effective radius) |
+
+#### Validation
+
+**1. Wall displacement** — `pointDisplacement` at any wall point should oscillate 0–0.267 mm following the Murgo waveform shape. Verify in ParaView with a probe at (0.05, 0.005, 0.0).
+
+**2. Mass conservation** — `|Q_inlet + Q_outlet|` ≠ 0 (wall expansion stores volume during systole), unlike rigid-wall cases. The difference equals dV/dt where V(t) = πR(t)²·L.
+
+**3. Flow rate modulation** — Q(t) peak should be slightly higher than Exp 04, diastolic Q slightly lower, consistent with Windkessel storage.
 
 ---
 
-### Experiment 05 — Heartbeat Flow Through a Vessel Junction (No Graft)
+### Experiment 06 — Heartbeat Flow Through a Vessel Junction (No Graft)
 
 **Goal:** Simulate pulsatile flow through a direct end-to-end anastomosis of two vessels with different radii, without a venous graft. Identify the flow disturbances (recirculation zones, turbulence onset) that occur when the r1/r2 ratio exceeds the clinical threshold.
 
@@ -597,21 +749,18 @@ Overlay cycle 2 and cycle 3 pressure and flow-rate traces in the ParaView chart 
 - Donor vessel radius: `r1 = 0.005 m`
 - Recipient vessel radius: `r2 = 0.003 m` → ratio `r1/r2 ≈ 1.67 > 3/2`
 - Junction type: abrupt step transition (direct suture model)
-- Pulsatile inlet: same waveform as Experiment 02
-
-**Outputs to Analyze:**
-- Velocity field at and downstream of the junction
+- Pulsatile inlet: same waveform as Experiments 02–05
 - Wall shear stress (WSS) distribution
 - Presence and extent of recirculation zones
 - Local Reynolds number at the junction
 
-**Files location:** `experiments/04_vessel_junction/`
+**Files location:** `experiments/06_vessel_junction/`
 
 ---
 
-### Experiment 06 — Heartbeat Flow with Venous Graft at Junction
+### Experiment 07 — Heartbeat Flow with Venous Graft at Junction
 
-**Goal:** Insert a venous graft segment (radius `r3`, length `L`) between the donor and recipient vessels. Compare flow quality against Experiment 04 to quantify the improvement in laminar flow preservation.
+**Goal:** Insert a venous graft segment (radius `r3`, length `L`) between the donor and recipient vessels. Compare flow quality against Experiment 06 to quantify the improvement in laminar flow preservation.
 
 **Key Parameters:**
 - Donor vessel radius: `r1 = 0.005 m`
@@ -619,8 +768,8 @@ Overlay cycle 2 and cycle 3 pressure and flow-rate traces in the ParaView chart 
 - Graft radius: `r3 = 0.004 m` (intermediate value, `r1 > r3 > r2`)
 - Graft length: `L = 0.02 m` (baseline, 20 mm)
 - Two junctions: donor→graft and graft→recipient
-- Pulsatile inlet: same waveform as Experiment 02
-- **Venous graft wall elasticity:** distinct from the native arterial vessels — venous wall is thinner and more compliant (lower Young's modulus, ~0.1–0.3 MPa vs. ~0.5–1.0 MPa for arteries), which must be accounted for in the wall boundary conditions
+- Pulsatile inlet: same waveform as Experiments 02–05
+- Venous wall is thinner and more compliant than native arterial vessels (lower Young's modulus, ~0.1–0.3 MPa vs. ~0.5–1.0 MPa for arteries), which must be accounted for in the wall boundary conditions
 
 **Geometry:**
 ```
@@ -630,44 +779,44 @@ Overlay cycle 2 and cycle 3 pressure and flow-rate traces in the ParaView chart 
 
 **Success Criteria:** Absence of sustained recirculation zones; WSS within physiological range (0.5–4.0 Pa).
 
-**Files location:** `experiments/05_venous_graft/`
+**Files location:** `experiments/07_venous_graft/`
 
 ---
 
-### Experiment 07 — Parametric Study: Venous Graft Length
+### Experiment 08 — Parametric Study: Venous Graft Length
 
-**Goal:** Using the configuration from Experiment 05, vary the graft length `L` to determine the optimal length that best preserves laminar flow at both junctions.
+**Goal:** Using the configuration from Experiment 07, vary the graft length `L` to determine the optimal length that best preserves laminar flow at both junctions.
 
 **Parameter Sweep:**
 
 | Case | Graft Length L |
 |------|---------------|
-| 06a  | 5 mm          |
-| 06b  | 10 mm         |
-| 06c  | 20 mm         |
-| 06d  | 40 mm         |
-| 06e  | 80 mm         |
+| 08a  | 5 mm          |
+| 08b  | 10 mm         |
+| 08c  | 20 mm         |
+| 08d  | 40 mm         |
+| 08e  | 80 mm         |
 
-All other parameters remain identical to Experiment 05 (`r1=5mm`, `r2=3mm`, `r3=4mm`).
+All other parameters remain identical to Experiment 07 (`r1=5mm`, `r2=3mm`, `r3=4mm`).
 
-**Files location:** `experiments/06_graft_length_study/`
+**Files location:** `experiments/08_graft_length_study/`
 
 Structure:
 ```
-experiments/06_graft_length_study/
+experiments/08_graft_length_study/
 ├── base/          # Shared template (copy and modify L in blockMeshDict)
-├── 06a_L05mm/
-├── 06b_L10mm/
-├── 06c_L20mm/
-├── 06d_L40mm/
-└── 06e_L80mm/
+├── 08a_L05mm/
+├── 08b_L10mm/
+├── 08c_L20mm/
+├── 08d_L40mm/
+└── 08e_L80mm/
 ```
 
 **Key Metric:** Reattachment length of any recirculation zone normalized by graft length.
 
 ---
 
-### Experiment 08 — Parametric Study: Venous Graft Radius
+### Experiment 09 — Parametric Study: Venous Graft Radius
 
 **Goal:** Using the baseline graft length from Experiment 06, vary the graft radius `r3` to find the optimal intermediate radius that minimizes flow disturbance at both step transitions.
 
@@ -675,25 +824,25 @@ experiments/06_graft_length_study/
 
 | Case | Graft Radius r3 | r1/r3 ratio | r3/r2 ratio |
 |------|----------------|-------------|-------------|
-| 07a  | 3.0 mm         | 1.67        | 1.00        |
-| 07b  | 3.5 mm         | 1.43        | 1.17        |
-| 07c  | 4.0 mm         | 1.25        | 1.33        |
-| 07d  | 4.5 mm         | 1.11        | 1.50        |
-| 07e  | 5.0 mm         | 1.00        | 1.67        |
+| 09a  | 3.0 mm         | 1.67        | 1.00        |
+| 09b  | 3.5 mm         | 1.43        | 1.17        |
+| 09c  | 4.0 mm         | 1.25        | 1.33        |
+| 09d  | 4.5 mm         | 1.11        | 1.50        |
+| 09e  | 5.0 mm         | 1.00        | 1.67        |
 
-All other parameters remain identical to the best-performing length from Experiment 06 (`r1=5mm`, `r2=3mm`).
+All other parameters remain identical to the best-performing length from Experiment 08 (`r1=5mm`, `r2=3mm`).
 
-**Files location:** `experiments/07_graft_radius_study/`
+**Files location:** `experiments/09_graft_radius_study/`
 
 Structure:
 ```
-experiments/07_graft_radius_study/
+experiments/09_graft_radius_study/
 ├── base/          # Shared template (copy and modify r3 in blockMeshDict)
-├── 07a_r3_3.0mm/
-├── 07b_r3_3.5mm/
-├── 07c_r3_4.0mm/
-├── 07d_r3_4.5mm/
-└── 07e_r3_5.0mm/
+├── 09a_r3_3.0mm/
+├── 09b_r3_3.5mm/
+├── 09c_r3_4.0mm/
+├── 09d_r3_4.5mm/
+└── 09e_r3_5.0mm/
 ```
 
 **Key Metric:** Maximum WSS at each step junction and minimum velocity in recirculation zones.
@@ -729,8 +878,9 @@ docker run -it --rm \
 # 2. Copy experiment to run folder
 cp -r /work/experiments/<experiment_name> /work/run/
 
-# 3. Navigate to run folder
+# 3. Navigate to run folder and create ParaView entry file
 cd /work/run/<experiment_name>
+touch <experiment_name>.foam
 
 # 4. Generate mesh
 blockMesh
@@ -741,10 +891,7 @@ checkMesh
 # 6. Run solver
 icoFoam          # For most laminar experiments
 # or
-pimpleFoam       # For FSI / more complex cases (Experiment 04)
-
-# 7. Create ParaView entry file
-touch <experiment_name>.foam
+pimpleFoam       # For FSI / more complex cases (Experiment 05+)
 ```
 
 Then open `~/Rheology-Simulation-of-Vein-Grafts/run/<experiment_name>/` in ParaView on macOS.
@@ -772,4 +919,8 @@ Useful filters for vascular flow analysis:
 - OpenFOAM Documentation: https://www.openfoam.com/
 - OpenFOAM Repository: https://gitlab.com/openfoam/core/openfoam
 - ParaView User's Guide: https://docs.paraview.org/en/latest/UsersGuide/index.html
+- Murgo JP, Westerhof N, Giolma JP, Altobelli SA. *Aortic input impedance in normal man: relationship to pressure wave forms.* Circulation. 1980;62(1):105–116. DOI: [10.1161/01.CIR.62.1.105](https://doi.org/10.1161/01.CIR.62.1.105) — Source of the digitized arterial pressure waveform used in Experiments 04–05.
+- Holzapfel GA, Ogden RW. *Constitutive modelling of arteries.* Proceedings of the Royal Society A. 2010;466:1551–1597. DOI: [10.1098/rspa.2009.0357](https://doi.org/10.1098/rspa.2009.0357) — Open-access reference for arterial wall Young's modulus (E = 0.1–3 MPa) used in Experiment 05.
+- Aboelkassem Y, Virag Z. *A hybrid Windkessel-Womersley model for blood flow in arteries.* Journal of Theoretical Biology. 2019;462:499–513. DOI: [10.1016/j.jtbi.2018.12.005](https://doi.org/10.1016/j.jtbi.2018.12.005) — Womersley model reference and arterial pressure waveform context.
+- Nichols WW, O'Rourke MF, Vlachopoulos C. *McDonald's Blood Flow in Arteries: Theoretical, Experimental and Clinical Principles.* 6th ed. London: Hodder Arnold; 2011. — Canonical reference for physiological arterial waveform shapes and Womersley flow theory.
 - OpenStreetMap Features: https://wiki.openstreetmap.org/wiki/Map_features

@@ -14,9 +14,11 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Variant of 02_heartbeat_sinusoidal: starts from zero velocity (no initial condition).
-// Purpose: observe the transient ramp-up from rest to periodic-steady state.
-// Viscous diffusion timescale τ = R²/ν = 0.005²/3.3e-6 ≈ 7.6 s → run for exactly 1τ.
+// Experiment 04 — Laminar Flow with Realistic Arterial Pressure Waveform.
+// Same geometry and solver as Experiments 02–03, but the outlet pressure follows
+// a digitized real aortic pressure waveform (Murgo et al., Circulation 1980)
+// instead of a sinusoidal approximation: rapid systolic upstroke, dicrotic notch,
+// and exponential diastolic decay — all within the 80–120 mmHg physiological range.
 
 application     icoFoam;
 
@@ -25,8 +27,8 @@ startTime       0;
 
 stopAt          endTime;
 
-// 7.6 s = 1 viscous diffusion timescale (τ = R²/ν ≈ 7.6 s) — covers the full
-// transient ramp-up from rest to near periodic-steady state.
+// Run for 7.6 s (= 1τ, τ = R²/ν ≈ 7.6 s, ≈ 8.9 cardiac cycles) — same duration
+// as Experiments 02–03 for direct Q(t) comparison on the same time axis.
 endTime         7.6;
 
 // deltaT = 0.002 s  →  CFL = U_center_peak * dt / dx

@@ -1,5 +1,7 @@
 # Visualising Results in ParaView
 
+> **Tested with ParaView 6.1.0-RC1.** The Python macros under `assets/paraview/` are written and verified against this version. Other versions may work but are not guaranteed.
+
 This guide covers both the **one-click macro** (recommended) and the **manual step-by-step** workflow for exploring OpenFOAM simulation results in ParaView.
 
 Each experiment ships with a dedicated Python macro under `assets/paraview/` that builds the full pipeline automatically. The manual steps below are provided for reference and for cases where you want to explore filters interactively.

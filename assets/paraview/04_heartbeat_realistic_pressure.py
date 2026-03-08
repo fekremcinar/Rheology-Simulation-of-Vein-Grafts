@@ -52,7 +52,7 @@ _IS_PVPYTHON = 'pvpython' in sys.executable
 
 # ── Macro defaults ────────────────────────────────────────────────────────────
 CASE_DIR = os.path.expanduser(
-    "~/Rheology-Simulation-of-Vein-Grafts/run/02_heartbeat_sinusoidal"
+    "~/Rheology-Simulation-of-Vein-Grafts/run/04_heartbeat_realistic_pressure"
 )
 RADIUS = 0.005  # vessel inner radius [m]
 

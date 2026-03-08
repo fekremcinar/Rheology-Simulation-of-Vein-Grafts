@@ -14,19 +14,31 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Variant of 02_heartbeat_sinusoidal: starts from zero velocity (no initial condition).
-// Purpose: observe the transient ramp-up from rest to periodic-steady state.
-// Viscous diffusion timescale τ = R²/ν = 0.005²/3.3e-6 ≈ 7.6 s → run for exactly 1τ.
+// Experiment 05 — Heartbeat Flow with Elastic Vessel Wall (FSI).
+// Same Murgo (1980) pressure waveform as Experiment 04, but now the vessel wall
+// is compliant: the wall moves radially according to the thin-shell model
+//   δR(t) = Δp(t) · R² / (E · h)
+// where E = 0.5 MPa (arterial Young's modulus), h = 1 mm (wall thickness).
+// Fluid: pimpleFoam (ALE, moving mesh).  Mesh motion: displacementLaplacian.
+// This is a one-way FSI: the prescribed pressure drives the wall, the wall motion
+// affects the fluid, but the fluid pressure does not feed back into the structural
+// model.  Max radial displacement at systole (Δp = 40 mmHg): δR ≈ 0.267 mm
+// (≈ 5.3 % of R), consistent with in-vivo measurements.
+//
+// Wall elasticity reference:
+//   Holzapfel GA, Ogden RW. "Constitutive modelling of arteries."
+//   Proc. Royal Society A. 2010;466:1551–1597. doi:10.1098/rspa.2009.0357
+//   (open access — typical arterial E = 0.1–3 MPa)
 
-application     icoFoam;
+application     pimpleFoam;
 
 startFrom       startTime;
 startTime       0;
 
 stopAt          endTime;
 
-// 7.6 s = 1 viscous diffusion timescale (τ = R²/ν ≈ 7.6 s) — covers the full
-// transient ramp-up from rest to near periodic-steady state.
+// Run for 7.6 s (= 1τ, τ = R²/ν ≈ 7.6 s, ≈ 8.9 cardiac cycles) — same duration
+// as Experiments 02–03 for direct Q(t) comparison on the same time axis.
 endTime         7.6;
 
 // deltaT = 0.002 s  →  CFL = U_center_peak * dt / dx

@@ -1,0 +1,188 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Experiment 04 — Realistic arterial pressure waveform (table lookup).
+//
+// icoFoam uses KINEMATIC pressure: p_kin = p_physical / rho  [m²/s²]
+//
+// ── Pressure waveform source ───────────────────────────────────────────────────
+// The outlet pressure follows a physiologically realistic arterial waveform
+// digitized from:
+//   Murgo JP, Westerhof N, Giolma JP, Altobelli SA.
+//   "Aortic input impedance in normal man: relationship to pressure wave forms."
+//   Circulation. 1980;62(1):105-116. DOI: 10.1161/01.CIR.62.1.105
+//
+// Subject: healthy young adult (28 years), 70 bpm, T = 0.857 s.
+// Features: rapid systolic upstroke → peak 120 mmHg → gradual decline →
+//           dicrotic notch (~93 mmHg at t/T ≈ 0.44) → diastolic decay → 80 mmHg.
+//
+// 21 control points (t_s, p_mmHg) at equal spacing (Δt ≈ 0.043 s):
+//
+//  t [s]   p [mmHg]    phase
+//  0.000      80       end-diastole
+//  0.043      81
+//  0.086      92
+//  0.129     110
+//  0.171     120       systolic peak
+//  0.214     118
+//  0.257     113
+//  0.300     107
+//  0.343     102
+//  0.386      97
+//  0.429      93       dicrotic notch
+//  0.471      96       dicrotic wave (rebound)
+//  0.514      92
+//  0.557      89
+//  0.600      87
+//  0.643      85
+//  0.686      83
+//  0.729      82
+//  0.771      81
+//  0.814      80
+//  0.857      80       = t = 0 (periodic)
+//
+// MAP (mean) ≈ (0+81+92+110+120+118+113+107+102+97+93+96+92+89+87+85+83+82+81+80)/20
+//            ≈ 94.4 mmHg  (physiological: 93 mmHg for 120/80 waveform ✓)
+//
+// ── Boundary condition strategy ───────────────────────────────────────────────
+//   p_outlet(t) = Murgo aortic waveform (80–120 mmHg) — physiological reference.
+//   p_inlet(t)  = p_outlet(t) + Δp(t)                — drives pulsatile flow.
+//
+//   Δp(t) is derived from Hagen-Poiseuille for target pulsatile velocity:
+//     U_center(t) = 0.275 + 0.225·sin(2πt/T − π/2)  [m/s]  (same as Exp 02/03)
+//     U_avg(t)    = U_center(t) / 2
+//     Δp_kin(t)   = 8·ν·L/R² · U_avg(t)
+//                 = 8 × 3.3e-6 × 0.1 / (0.005²) × U_avg(t)
+//                 = 0.1056 × U_avg(t)   [m²/s²]
+//     → Δp_mean   = 0.1056 × 0.1375 = 0.01452 m²/s² = 0.116 mmHg
+//     → Δp_peak   = 0.1056 × 0.2500 = 0.0264  m²/s² = 0.211 mmHg
+//     → Δp_min    = 0.1056 × 0.0250 = 0.00264 m²/s² = 0.021 mmHg
+//
+//   The absolute pressure level (80–120 mmHg) is physiological.
+//   The driving gradient (0.02–0.21 mmHg) is appropriate for this 10 cm segment.
+//
+// Note: codedFixedValue compiles a shared library at runtime.
+//   OpenFOAM refuses compilation when running as root. Always start Docker
+//   with:  docker run -u "$(id -u)":"$(id -g)" ...
+
+dimensions      [0 2 -2 0 0 0 0];
+
+// Initialise to end-diastolic pressure (80 mmHg kinematic).
+internalField   uniform 10.061;   // 80 mmHg = 80 × 133.322 / 1060 m²/s²
+
+boundaryField
+{
+    outlet
+    {
+        // p_outlet(t) = Murgo aortic waveform (80–120 mmHg) [kinematic m²/s²]
+        // This represents the physiological downstream reference pressure.
+        type            codedFixedValue;
+        value           uniform 10.061;   // 80 mmHg end-diastole initial [m²/s²]
+        name            realisticPressureOutlet;
+
+        code
+        #{
+            const scalar t = this->db().time().value();
+            const scalar T = 0.857;
+
+            const scalar tbl_t[] = {
+                0.000, 0.043, 0.086, 0.129, 0.171, 0.214, 0.257,
+                0.300, 0.343, 0.386, 0.429, 0.471, 0.514, 0.557,
+                0.600, 0.643, 0.686, 0.729, 0.771, 0.814, 0.857
+            };
+            const scalar tbl_p[] = {   // [mmHg]
+                80, 81, 92, 110, 120, 118, 113,
+               107, 102,  97,  93,  96,  92,  89,
+                87,  85,  83,  82,  81,  80,  80
+            };
+            const label N = 21;
+
+            scalar tmod = t - std::floor(t / T) * T;
+
+            scalar p_mmhg = tbl_p[N - 1];
+            for (label i = 0; i < N - 1; i++)
+            {
+                if (tmod >= tbl_t[i] && tmod < tbl_t[i + 1])
+                {
+                    scalar alpha = (tmod - tbl_t[i]) / (tbl_t[i + 1] - tbl_t[i]);
+                    p_mmhg = tbl_p[i] + alpha * (tbl_p[i + 1] - tbl_p[i]);
+                    break;
+                }
+            }
+
+            operator==(scalar(p_mmhg * 133.322 / 1060.0));
+        #};
+    }
+
+    inlet
+    {
+        // p_inlet(t) = p_outlet(t) + Δp(t)
+        // Δp(t) = 8·ν·L/R² · U_avg(t) [Hagen-Poiseuille, kinematic]
+        //       = 0.1056 · [0.1375 + 0.1125·sin(2πt/T − π/2)]  [m²/s²]
+        // This drives pulsatile flow matching the target waveform of Exp 02/03.
+        type            codedFixedValue;
+        value           uniform 10.076;   // 80 mmHg + mean Δp (0.116 mmHg) [m²/s²]
+        name            realisticPressureInlet;
+
+        code
+        #{
+            const scalar t = this->db().time().value();
+            const scalar T = 0.857;
+
+            // Outlet waveform table (Murgo et al.)
+            const scalar tbl_t[] = {
+                0.000, 0.043, 0.086, 0.129, 0.171, 0.214, 0.257,
+                0.300, 0.343, 0.386, 0.429, 0.471, 0.514, 0.557,
+                0.600, 0.643, 0.686, 0.729, 0.771, 0.814, 0.857
+            };
+            const scalar tbl_p[] = {   // [mmHg]
+                80, 81, 92, 110, 120, 118, 113,
+               107, 102,  97,  93,  96,  92,  89,
+                87,  85,  83,  82,  81,  80,  80
+            };
+            const label N = 21;
+
+            scalar tmod = t - std::floor(t / T) * T;
+
+            scalar p_mmhg = tbl_p[N - 1];
+            for (label i = 0; i < N - 1; i++)
+            {
+                if (tmod >= tbl_t[i] && tmod < tbl_t[i + 1])
+                {
+                    scalar alpha = (tmod - tbl_t[i]) / (tbl_t[i + 1] - tbl_t[i]);
+                    p_mmhg = tbl_p[i] + alpha * (tbl_p[i + 1] - tbl_p[i]);
+                    break;
+                }
+            }
+
+            // Pulsatile driving gradient (Hagen-Poiseuille):
+            //   U_avg(t) = 0.1375 + 0.1125·sin(2πt/T − π/2)
+            //   Δp_kin   = 8·ν·L/R² · U_avg = 0.1056 · U_avg   [m²/s²]
+            const scalar pi    = 3.14159265358979;
+            const scalar U_avg = 0.1375 + 0.1125 * Foam::sin(2.0*pi*tmod/T - pi/2.0);
+            const scalar dp    = 0.1056 * U_avg;   // [m²/s²]
+
+            operator==(scalar(p_mmhg * 133.322 / 1060.0 + dp));
+        #};
+    }
+
+    wall
+    {
+        type            zeroGradient;
+    }
+}
+
+// ************************************************************************* //
