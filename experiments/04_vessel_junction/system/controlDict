@@ -1,0 +1,97 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Experiment 04 — Heartbeat Flow Through a Vessel Junction (No Graft)
+//
+// Solver: pimpleFoam (transient incompressible)
+//
+// Pulsatile parabolic inlet (r1 = 5 mm) drives flow for 5 cardiac cycles.
+// First 3 cycles are discarded (initialisation transient); OSI, TAWSS, RRT
+// are computed over the final 2 cycles (t = 2.571 s to 4.285 s).
+//
+// Time step: dt = 0.005 s → ~171 steps per cycle.
+//   Peak axial CFL in upstream tube: U_peak_centreline * dt / dx
+//     = (2 × 0.5) × 0.005 / 0.0025 = 2.0
+//   CFL in downstream tube: area-scaled U_peak × (r1/r2)² ≈ 1.39 × 2 = 2.78
+//   Handled by nOuterCorrectors = 3 in fvSolution (PIMPLE loop).
+
+application     pimpleFoam;
+
+startFrom       startTime;
+startTime       0;
+
+stopAt          endTime;
+endTime         4.285;      // 5 × T = 5 × 0.857 s
+
+deltaT          0.005;
+
+writeControl    runTime;
+writeInterval   0.02;       // 43 snapshots/cycle — needed for accurate OSI/TAWSS
+
+purgeWrite      0;
+writeFormat     ascii;
+writePrecision  6;
+writeCompression off;
+
+timeFormat      general;
+timePrecision   6;
+
+runTimeModifiable true;
+
+libs ("libutilityFunctionObjects.so");
+
+functions
+{
+    flowRateInlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        field           phi;
+        operation       sum;
+        regionType      patch;
+        name            inlet;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+
+    flowRateOutlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        field           phi;
+        operation       sum;
+        regionType      patch;
+        name            outlet;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+
+    pressureProbes
+    {
+        type            probes;
+        libs            ("libsampling.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        fields          (p);
+        probeLocations
+        (
+            ( 0.030  0  0 )   // probe 0: upstream r1 section (x = 30 mm)
+            ( 0.080  0  0 )   // probe 1: downstream r2 section (x = 80 mm)
+        );
+    }
+}
+
+// ************************************************************************* //

@@ -10,46 +10,17 @@ FoamFile
     version     2.0;
     format      ascii;
     class       dictionary;
-    object      fvSolution;
+    object      transportProperties;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-solvers
-{
-    p
-    {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       1e-06;
-        relTol          0.05;
-    }
+// Blood rheology — Newtonian approximation
+//   Dynamic viscosity : mu  = 0.0035 Pa·s
+//   Density           : rho = 1060  kg/m³
+//   Kinematic viscosity: nu = mu/rho ≈ 3.3e-6 m²/s
 
-    pFinal
-    {
-        $p;
-        relTol          0;
-    }
+transportModel  Newtonian;
 
-    U
-    {
-        solver          smoothSolver;
-        smoother        symGaussSeidel;
-        tolerance       1e-05;
-        relTol          0.1;
-    }
-
-    UFinal
-    {
-        $U;
-        relTol          0;
-    }
-}
-
-PIMPLE
-{
-    nOuterCorrectors    1;   // PISO mode (1 outer = no SIMPLE relaxation needed)
-    nCorrectors         2;
-    nNonOrthogonalCorrectors 1;
-}
+nu              [0 2 -1 0 0 0 0] 3.3e-06;
 
 // ************************************************************************* //

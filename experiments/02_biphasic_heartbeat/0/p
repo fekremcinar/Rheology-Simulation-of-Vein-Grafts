@@ -9,47 +9,42 @@ FoamFile
 {
     version     2.0;
     format      ascii;
-    class       dictionary;
-    object      fvSolution;
+    class       volScalarField;
+    object      p;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-solvers
+// pimpleFoam uses KINEMATIC pressure: p_kin = p_physical / rho  [m²/s²]
+//
+// Velocity-driven setup: pressure is NOT prescribed at the inlet.
+// The outlet is held at gauge zero; the solver computes the time-varying
+// pressure drop required to sustain the pulsatile velocity.
+//
+// inletOutlet is used at the inlet to allow a consistent pressure field
+// when back-flow is absent (zeroGradient) while protecting against
+// spurious oscillations.
+
+dimensions      [0 2 -2 0 0 0 0];
+
+internalField   uniform 0;
+
+boundaryField
 {
-    p
+    inlet
     {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       1e-06;
-        relTol          0.05;
+        type            zeroGradient;
     }
 
-    pFinal
+    outlet
     {
-        $p;
-        relTol          0;
+        type            fixedValue;
+        value           uniform 0;
     }
 
-    U
+    wall
     {
-        solver          smoothSolver;
-        smoother        symGaussSeidel;
-        tolerance       1e-05;
-        relTol          0.1;
+        type            zeroGradient;
     }
-
-    UFinal
-    {
-        $U;
-        relTol          0;
-    }
-}
-
-PIMPLE
-{
-    nOuterCorrectors    1;   // PISO mode (1 outer = no SIMPLE relaxation needed)
-    nCorrectors         2;
-    nNonOrthogonalCorrectors 1;
 }
 
 // ************************************************************************* //

@@ -10,46 +10,45 @@ FoamFile
     version     2.0;
     format      ascii;
     class       dictionary;
-    object      fvSolution;
+    object      fvSchemes;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-solvers
+// Transient pulsatile schemes for pimpleFoam.
+// CrankNicolson 0.9 for temporal accuracy; linearUpwind for div to prevent
+// spurious oscillations near the axis and step junction.
+
+ddtSchemes
 {
-    p
-    {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       1e-06;
-        relTol          0.05;
-    }
-
-    pFinal
-    {
-        $p;
-        relTol          0;
-    }
-
-    U
-    {
-        solver          smoothSolver;
-        smoother        symGaussSeidel;
-        tolerance       1e-05;
-        relTol          0.1;
-    }
-
-    UFinal
-    {
-        $U;
-        relTol          0;
-    }
+    default         CrankNicolson 0.9;
 }
 
-PIMPLE
+gradSchemes
 {
-    nOuterCorrectors    1;   // PISO mode (1 outer = no SIMPLE relaxation needed)
-    nCorrectors         2;
-    nNonOrthogonalCorrectors 1;
+    default         Gauss linear;
+    grad(U)         Gauss linear;
+}
+
+divSchemes
+{
+    default         none;
+    div(phi,U)      Gauss linearUpwind grad(U);
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;
+}
+
+laplacianSchemes
+{
+    default         Gauss linear corrected;
+}
+
+interpolationSchemes
+{
+    default         linear;
+}
+
+snGradSchemes
+{
+    default         corrected;
 }
 
 // ************************************************************************* //

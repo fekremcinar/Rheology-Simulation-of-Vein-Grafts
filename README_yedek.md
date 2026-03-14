@@ -49,13 +49,12 @@ With venous graft  (r1 → r3 → r2, each step ratio < 3/2)
 .
 ├── experiments/          # OpenFOAM case definition files (tracked in git)
 │   ├── 01_simple_laminar/
-│   ├── 02_biphasic_heartbeat/
-│   ├── 03_triphasic_heartbeat/
-│   ├── 04_vessel_junction/
-│   ├── 05_venous_graft/
-│   ├── 06_graft_length_study/
-│   ├── 07_graft_radius_study/
-│   └── assets/scripts/
+│   ├── 02_heartbeat_laminar/
+│   ├── 03_vessel_junction/
+│   ├── 04_venous_graft/
+│   ├── 05_graft_radius_study/
+│   ├── 06_elastic_vessel/
+│   └── 07_mesh_validation/
 ├── run/                  # Solver outputs (not tracked in git)
 ├── assets/
 │   └── paraview/          # ParaView Python macros
@@ -127,81 +126,6 @@ In OpenFOAM this is implemented with:
 The Womersley profile automatically satisfies the no-slip condition at the wall (W_n(1) = 0)
 and produces the correct blunt plug profile at high α, including the physiologically important
 **near-wall flow reversal ring** during the deceleration phase of diastole.
-
-### Derivation of Q(t) for a 1 mm Artery
-
-A physiologically realistic Q(t) for a 1 mm artery cannot be measured directly (Doppler
-resolution limits) but is derived from larger-vessel measurements using Murray's cube law.
-
-**Murray's Law (cube law):**
-Murray's law [3] states that for a branching arterial tree under minimum energy conditions:
-
-    Q ∝ r^ξ    where ξ = 3.0 (steady laminar, Murray 1926) or ξ = 2.76 (pulsatile, Olufsen 2000)
-
-This project uses ξ = 3.0 (conservative estimate). The scaling formula is:
-
-    Q_mean(1mm) = Q_mean(ref) × (r_1mm / r_ref)³
-
-**Womersley Number at 1 mm:**
-
-    α = r × √(ω / ν) = 0.0005 × √(2π × 70/60 / 3.3×10⁻⁶) ≈ 0.745
-
-Since α ≪ 2, viscous forces dominate inertia and the velocity profile is parabolic at every
-instant (quasi-Poiseuille regime). The full Womersley profile reduces to:
-
-    u(r, t) = 2 × Q(t)/A × (1 − (r/r₀)²)
-
-This is confirmed by Madhavan & Kemmerling (2018) [11]: differences between plug, parabolic,
-and Womersley inlet profiles vanish within 1.75 diameters of the inlet.
-
-**Option A — Biphasic (cerebral/carotid territory):**
-
-Source: Holdsworth et al. (1999) [1], common carotid artery (CCA), 17 subjects, 3560 cycles.
-- Reference: r_CCA = 3.15 mm, Q_mean = 6.0 ml/s, T = 0.917 s
-- Scaled: Q_mean(1mm) = 6.0 × (0.5/3.15)³ = **24 μl/s**, T = 0.857 s (70 bpm)
-- Waveform shape: biphasic — large systolic peak (Q_peak ≈ 3.93 × Q_mean), brief dicrotic
-  notch dip at ~43% of cycle, diastolic decay. No flow reversal.
-
-Physical basis: In small peripheral arteries such as the saphenous artery, McDonald's
-*Blood Flow in Arteries* (Chapter 9) explicitly states: *"there is no backflow and the flow
-fluctuations are very small"* — attributed to high impedance at low harmonics near the
-peripheral reflecting sites. Reymond et al. (2009) [4] confirms that in cerebral and carotid
-branches, *"flow is purely unidirectional."*
-
-**Option B — Triphasic (peripheral/femoral territory):**
-
-Source: Mikheev et al. (2020) [2], superficial femoral artery (SFA), physical simulation.
-- Reference: r_SFA = 2.5 mm, Q_mean = 2.07 ml/s, AU = U_max/U_mean ≈ 12
-- Scaled: Q_mean(1mm) = 2.07 × (0.5/2.5)³ = **16.6 μl/s**, T = 0.857 s (70 bpm)
-- Waveform shape: triphasic — high systolic peak (AU ≈ 12), flow reversal in early diastole
-  (caused by wave reflections from the high-resistance resting muscle bed), then a small
-  secondary antegrade peak.
-
-Physical note: Flow reversal in the femoral territory occurs in large vessels (5–8 mm). As
-vessels branch toward 1 mm, viscous damping progressively attenuates the reversed-flow
-component. For research purposes, the triphasic waveform is included as a worst-case
-scenario to test how flow reversal influences hemodynamic indices at anastomosis sites.
-
-**Velocity Profile (both experiments):**
-
-Since α = 0.745 ≪ 2 for a 1 mm artery, the Womersley profile collapses to the Hagen-Poiseuille
-parabola at every instant [3,5]:
-
-    u(r, t) = 2 · Q(t) / (π r₀²) · (1 − r²/r₀²)
-
-This is implemented via `codedFixedValue` in `0/U`. See `assets/scripts/generate_qt_waveforms.py`
-for the waveform digitization and scaling procedure.
-
-**Operating range for a 1 mm artery:**
-
-| Quantity | Biphasic (Option A) | Triphasic (Option B) |
-|----------|---------------------|----------------------|
-| Q_mean   | 24 μl/s             | 16.6 μl/s            |
-| Q_peak   | 94 μl/s             | 200 μl/s             |
-| U_mean   | 3.1 cm/s            | 2.1 cm/s             |
-| U_center_peak | 24 cm/s        | 51 cm/s              |
-| Re_mean  | 9.3                 | 6.4                  |
-| Re_peak  | 36                  | 77                   |
 
 ### Outlet Boundary Condition
 
@@ -304,8 +228,6 @@ radii, because it captures both the magnitude and the directional consistency of
 | **Local Reynolds number** | `Re = ρ U D / μ` at junction | Re_jet can exceed 4200 even at global Re~1500 | Medium |
 | **Pressure drop** | `ΔP = P_in - P_out` | Energy loss across graft | Medium |
 
-WSS/OSI/RRT metrics [6,7,8,9] are the primary hemodynamic indicators used in this study.
-
 ### Local Reynolds Number at the Junction Step
 
 Even when the **global** Reynolds number is comfortably laminar (Re ~ 1500), the **jet
@@ -325,9 +247,9 @@ Use this scorecard to compare experiments. Lower scores are better for thrombosi
 | Experiment | Max RRT (Pa⁻¹) | Min TAWSS (Pa) | Max OSI | Recirc. length/D | Verdict |
 |------------|-------------|---------------|---------|-----------------|---------|
 | 01 — Straight tube (baseline) | | | | | |
-| 02 — Biphasic pulsatile (1mm) | | | | | |
-| 03 — Triphasic pulsatile (1mm) | | | | | |
-| 04 — Direct junction | | | | | |
+| 02 — Pulsatile baseline | | | | | |
+| 03 — Direct junction | | | | | |
+| 04 — Graft (baseline L) | | | | | |
 | 05 — Graft radius sweep | | | | | |
 | 06 — Elastic wall | | | | | |
 
@@ -368,14 +290,14 @@ after the simulation completes.
 
 ## Experiments
 
-### Experiment 01 — Steady Poiseuille Validation in a 1 mm Tube (Baseline)
+### Experiment 01 — Simple Laminar Flow in a Straight Tube
 
 **Solver:** `pimpleFoam` (transient — runs until steady state)
 **Purpose:** Baseline validation. Confirm that a constant-velocity inlet produces a
 fully developed parabolic (Hagen-Poiseuille) profile at the outlet.
 
 **Boundary conditions:**
-- Inlet: `fixedValue U = (0.0306 0 0) m/s` (uniform plug flow)
+- Inlet: `fixedValue U = (0.1 0 0) m/s` (uniform plug flow)
 - Outlet: `fixedValue p = 0`, `inletOutlet U`
 - Wall: `noSlip`
 
@@ -386,7 +308,7 @@ pulsatile transient cases in Experiments 02–06 without any solver switch.
 `endTime = 1 s` is sufficient: the diffusion time-scale t_diff = R²/ν ≈ 7.6 s is how long it takes to develop entirely from rest, but the profile is already ≥95% converged well before t = 1 s for this low-Re case.
 
 **Expected outcome:** Parabolic velocity profile at outlet; centreline velocity = 2 × U_mean;
-negligible pressure drop variation; Re ≈ 9.3 (fully laminar).
+negligible pressure drop variation; Re ≈ 303 (fully laminar).
 
 **Validation:** Compare outlet profile to analytical Poiseuille solution:
 `U(r) = 2 U_mean (1 - (r/R)²)`.
@@ -415,7 +337,7 @@ pimpleFoam
 
 ---
 
-### Experiment 02 — Biphasic Pulsatile Heartbeat (Cerebral/Carotid Territory)
+### Experiment 02 — Physiologically Correct Heartbeat in a Straight Tube
 
 **Solver:** `pimpleFoam` (transient)
 **Purpose:** Introduce a realistic pulsatile inlet waveform and confirm that the cardiac
@@ -503,7 +425,7 @@ pimpleFoam
 
 ---
 
-### Experiment 03 — Triphasic Pulsatile Heartbeat (Peripheral/Femoral Territory)
+### Experiment 03 — Heartbeat Flow Through a Vessel Junction (No Graft)
 
 **Solver:** `pimpleFoam` (transient)
 **Purpose:** Quantify the hemodynamic penalty of a direct anastomosis between mismatched
@@ -543,7 +465,7 @@ pimpleFoam
 
 ---
 
-### Experiment 04 — Steady Pulsatile Flow Through a Vessel Junction (No Graft)
+### Experiment 04 — Heartbeat Flow with Venous Graft at Junction
 
 **Solver:** `pimpleFoam` (transient)
 **Purpose:** Introduce a venous graft (r3, L) between the two vessels and measure the
@@ -783,28 +705,130 @@ pvpython assets/paraview/01_simple_laminar.py
 
 ## References
 
-[1] D. W. Holdsworth, C. J. D. Norley, R. Frayne, D. A. Steinman, and B. K. Rutt, “Characterization of common carotid artery blood-flow waveforms in normal human subjects,” *Physiological Measurement*, vol. 20, no. 2, pp. 219–240, 1999. https://doi.org/10.1088/0967-3334/20/2/301
+### Foundational Physiology & Thrombosis
 
-[2] N. I. Mikheev, V. M. Molochnikov, A. A. Paereliy, and O. A. Dushina, “Physical simulation of blood flow in a femoropopliteal artery graft,” *Journal of Physics: Conference Series*, vol. 1683, p. 022090, 2020. https://doi.org/10.1088/1742-6596/1683/2/022090
+1. Virchow, R. (1856). *Thrombose und Embolie. Gefäßentzündung und septische Infektion.*
+   Gesammelte Abhandlungen zur wissenschaftlichen Medicin. Frankfurt: Meidinger.
+   — Original formulation of Virchow’s Triad: abnormal flow, endothelial injury,
+   hypercoagulability.
 
-[3] M. S. Olufsen, C. S. Peskin, W. Y. Kim, E. M. Pedersen, A. Nadim, and J. Larsen, “Numerical simulation and experimental validation of blood flow in arteries with structured-tree outflow conditions,” *Annals of Biomedical Engineering*, vol. 28, no. 11, pp. 1281–1299, 2000. https://doi.org/10.1114/1.1326031
+2. Womersley, J. R. (1955). Method for the calculation of velocity, rate of flow and
+   viscous drag in arteries when the pressure gradient is known. *Journal of Physiology*,
+   127, 553–563. https://doi.org/10.1113/jphysiol.1955.sp005276
+   — Analytical solution for pulsatile pipe flow; defines the Womersley number α and
+   the Bessel-function radial velocity profile used in this project's inlet BC.
 
-[4] P. Reymond, F. Merenda, F. Perren, D. Rüfenacht, and N. Stergiopulos, “Validation of a one-dimensional model of the systemic arterial tree,” *American Journal of Physiology — Heart and Circulatory Physiology*, vol. 297, no. 1, pp. H208–H222, 2009. https://doi.org/10.1152/ajpheart.00037.2009
+3. Aboelkassem, Y., & Virag, Z. (2019). A hybrid Windkessel-Womersley model for blood
+   flow in arteries. *Journal of Theoretical Biology*, 462, 499–513.
+   https://doi.org/10.1016/j.jtbi.2018.12.005
+   — Proposes a hybrid WK-W model that couples Windkessel lumped-parameter compartments
+   with the Womersley solution for the aortic tube. Demonstrates that at physiological
+   Womersley numbers the pulsatile radial profile is blunt during systole and exhibits a
+   near-wall flow reversal ring during diastolic deceleration — effects not captured by
+   the parabolic approximation. The Womersley inlet BC in Experiment 02 is based directly
+   on Eq. 14 of this paper.
 
-[5] J. R. Womersley, “Method for the calculation of velocity, rate of flow and viscous drag in arteries when the pressure gradient is known,” *Journal of Physiology*, vol. 127, pp. 553–563, 1955. https://doi.org/10.1113/jphysiol.1955.sp005276
+4. Holdsworth, D. W., Norley, C. J. D., Frayne, R., Steinman, D. A., & Rutt, B. K.
+   (1999). Characterization of common carotid artery blood-flow waveforms in normal
+   human subjects. *Physiological Measurement*, 20(2), 219–240.
+   https://doi.org/10.1088/0967-3334/20/2/301
+   — Provides a widely-used archetypal CCA waveform from 17 volunteers (3560 cardiac
+   cycles, pulsed-Doppler ultrasound). Key parameters: T = 0.917 s, V_peak = 108.2 cm/s
+   at t = 0.152 s, dicrotic notch at t = 0.398 s (19.4 cm/s), Q_mean = 6.0 mL/s for
+   D ≈ 6.7 mm. Scaled to 70 bpm (T = 0.857 s) and R = 5 mm for Experiments 02 and 03:
+   Q_peak ≈ 39.2 mL/s, Q_notch ≈ 7.9 mL/s, Q_mean ≈ 10.3 mL/s.
 
-[6] D. N. Ku, D. P. Giddens, C. K. Zarins, and S. Glagov, “Pulsatile flow and atherosclerosis in the human carotid bifurcation: positive correlation between plaque location and low oscillating shear stress,” *Arteriosclerosis*, vol. 5, no. 3, pp. 293–302, 1985. https://doi.org/10.1161/01.ATV.5.3.293
+### Hemodynamic Indices: WSS, OSI, and RRT
 
-[7] H. A. Himburg, D. M. Grzybowski, A. L. Hazel, J. A. LaMack, X.-M. Li, and M. H. Friedman, “Spatial comparison between wall shear stress measures and porcine arterial endothelial permeability,” *American Journal of Physiology — Heart and Circulatory Physiology*, vol. 286, no. 5, pp. H1916–H1922, 2004. https://doi.org/10.1152/ajpheart.00897.2003
+5. Ku, D. N., Giddens, D. P., Zarins, C. K., & Glagov, S. (1985). Pulsatile flow and
+   atherosclerosis in the human carotid bifurcation: positive correlation between plaque
+   location and low oscillating shear stress. *Arteriosclerosis*, 5(3), 293–302.
+   https://doi.org/10.1161/01.ATV.5.3.293
+   — **Seminal paper** introducing the Oscillatory Shear Index (OSI) and demonstrating
+   that low, oscillatory WSS co-localises with atherosclerotic plaque.
 
-[8] X. He and D. N. Ku, “Pulsatile flow in the human left coronary artery bifurcation: average conditions,” *Journal of Biomechanical Engineering*, vol. 118, no. 1, pp. 74–82, 1996. https://doi.org/10.1115/1.2795943
+6. Zarins, C. K., Giddens, D. P., Bharadvaj, B. K., Sottiurai, V. S., Mabon, R. F., &
+   Glagov, S. (1983). Carotid bifurcation atherosclerosis: quantitative correlation of
+   plaque localization with flow velocity profiles and wall shear stress. *Circulation
+   Research*, 53(4), 502–514. https://doi.org/10.1161/01.RES.53.4.502
+   — Establishes the quantitative link between low WSS and intimal thickening in vivo.
 
-[9] A. M. Malek, S. L. Alper, and S. Izumo, “Hemodynamic shear stress and its role in atherosclerosis,” *JAMA*, vol. 282, no. 21, pp. 2035–2042, 1999. https://doi.org/10.1001/jama.282.21.2035
+7. Himburg, H. A., Grzybowski, D. M., Hazel, A. L., LaMack, J. A., Li, X.-M., &
+   Friedman, M. H. (2004). Spatial comparison between wall shear stress measures and
+   porcine arterial endothelial permeability. *American Journal of Physiology — Heart
+   and Circulatory Physiology*, 286(5), H1916–H1922.
+   https://doi.org/10.1152/ajpheart.00897.2003
+   — **Introduces Relative Residence Time (RRT)** as a combined metric of TAWSS and OSI;
+   shows RRT correlates better with endothelial permeability than either index alone.
 
-[10] R. S. Keynton, M. M. Evancho, R. L. Sims, N. V. Rodway, A. Gobin, and S. E. Rittgers, “Intimal hyperplasia and wall shear stress in arterial bypass graft distal anastomoses: an in vivo model study,” *Journal of Biomechanical Engineering*, vol. 123, no. 5, pp. 464–473, 2001. https://doi.org/10.1115/1.1392318
+8. He, X., & Ku, D. N. (1996). Pulsatile flow in the human left coronary artery
+   bifurcation: average conditions. *Journal of Biomechanical Engineering*, 118(1), 74–82.
+   https://doi.org/10.1115/1.2795943
+   — Defines time-averaged wall shear stress (TAWSS) and OSI formulas used in this study.
 
-[11] S. Madhavan and E. M. C. Kemmerling, “The effect of inlet and outlet boundary conditions in image-based CFD modeling of aortic flow,” *BioMedical Engineering OnLine*, vol. 17, p. 66, 2018. https://doi.org/10.1186/s12938-018-0497-1
+9. Malek, A. M., Alper, S. L., & Izumo, S. (1999). Hemodynamic shear stress and its role
+   in atherosclerosis. *JAMA*, 282(21), 2035–2042.
+   https://doi.org/10.1001/jama.282.21.2035
+   — Reviews the mechanobiological mechanisms by which low WSS (< 0.4 Pa) promotes
+   endothelial dysfunction, platelet adhesion, and thrombosis.
 
-[12] M. C. F. Ford, O. Alperin, S. H. Lee, D. W. Holdsworth, and D. A. Steinman, “Characterization of volumetric flow rate waveforms in the normal internal carotid and vertebral arteries,” *Physiological Measurement*, vol. 26, no. 4, pp. 477–488, 2005.
+10. Slager, C. J., Wentzel, J. J., Gijsen, F. J. H., Thury, A., van der Wal, A. C.,
+   Schaar, J. A., & Serruys, P. W. (2005). The role of shear stress in the destabilization
+   of vulnerable plaques and related therapeutic implications. *Nature Clinical Practice
+   Cardiovascular Medicine*, 2(9), 456–464. https://doi.org/10.1038/ncpcardio0317
+   — Explains how oscillatory shear downstream of stenoses promotes thrombosis and
+   plaque rupture.
 
-[13] OpenFOAM Foundation, *OpenFOAM User Guide — v2412*, https://www.openfoam.com/documentation/
+### Windkessel Outflow Models
+
+11. Frank, O. (1899). Die Grundform des arteriellen Pulses: Erste Abhandlung.
+   *Zeitschrift für Biologie*, 37, 483–526.
+   — **Original Windkessel (2-element RC) model** of arterial compliance and resistance.
+
+12. Westerhof, N., Bosman, F., De Vries, C. J., & Noordergraaf, A. (1969). Analog studies
+    of the human systemic arterial tree. *Journal of Biomechanics*, 2(2), 121–143.
+    https://doi.org/10.1016/0021-9290(69)90024-4
+    — Extends Frank’s model to the **3-element Windkessel** (R1–C–R2), which accounts
+    for characteristic impedance at the inlet.
+
+13. Westerhof, N., Lankhaar, J.-W., & Westerhof, B. E. (2009). The arterial Windkessel.
+    *Medical & Biological Engineering & Computing*, 47(2), 131–141.
+    https://doi.org/10.1007/s11517-008-0359-2
+    — Modern review of Windkessel theory, parameter estimation, and clinical applications.
+
+14. Vignon-Clementel, I. E., Figueroa, C. A., Jansen, K. E., & Taylor, C. A. (2006).
+    Outflow boundary conditions for three-dimensional finite element modeling of blood flow
+    and pressure in arteries. *Computer Methods in Applied Mechanics and Engineering*,
+    195(29–32), 3776–3796. https://doi.org/10.1016/j.cma.2005.04.014
+    — Rigorous derivation of how to couple a 3-element Windkessel to a 3-D CFD outlet;
+    reference implementation for OpenFOAM-style solvers.
+
+### Vascular Anastomosis & Graft Hemodynamics
+
+15. Keynton, R. S., Evancho, M. M., Sims, R. L., Rodway, N. V., Gobin, A., &
+    Rittgers, S. E. (2001). Intimal hyperplasia and wall shear stress in arterial bypass
+    graft distal anastomoses: an in vivo model study. *Journal of Biomechanical
+    Engineering*, 123(5), 464–473. https://doi.org/10.1115/1.1392318
+    — Quantifies WSS distribution at end-to-side anastomoses and its correlation with
+    intimal hyperplasia — directly relevant to venous graft failure.
+
+16. Leuprecht, A., Perktold, K., Prosi, M., Berk, T., Trubel, W., & Schima, H. (2002).
+    Numerical study of hemodynamics and wall mechanics in distal end-to-side anastomoses
+    of bypass grafts. *Journal of Biomechanics*, 35(2), 225–236.
+    https://doi.org/10.1016/S0021-9290(01)00194-4
+    — CFD study of anastomosis geometry effects on WSS and recirculation; validates
+    the numerical approach used in this project.
+
+17. Ojha, M., Cobbold, R. S. C., Johnston, K. W., & Hummel, R. L. (1990). Pulsatile flow
+    through constricted tubes: an experimental investigation using photochromic tracer
+    methods. *Journal of Fluid Mechanics*, 220, 295–316.
+    https://doi.org/10.1017/S0022112090003263
+    — Experimental benchmark for pulsatile flow in geometries with sudden changes;
+    useful for validation of Experiments 03–05.
+
+### Numerical Methods & OpenFOAM
+
+18. OpenFOAM Foundation. *OpenFOAM User Guide — v2412.*
+    https://www.openfoam.com/documentation/
+    — Reference for solver configuration, boundary conditions, and function objects
+    (wallShearStress, probes) used in this study.

@@ -47,7 +47,10 @@ solvers
 
 PIMPLE
 {
-    nOuterCorrectors    1;   // PISO mode (1 outer = no SIMPLE relaxation needed)
+    // nOuterCorrectors = 3: downstream CFL can reach ~2.8 at peak systole
+    // (flow accelerates through the contraction by the area ratio (r1/r2)^2).
+    // Three outer correctors give stability without excessive computational cost.
+    nOuterCorrectors    3;
     nCorrectors         2;
     nNonOrthogonalCorrectors 1;
 }

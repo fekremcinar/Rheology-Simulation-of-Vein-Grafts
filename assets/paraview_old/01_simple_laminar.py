@@ -2,8 +2,8 @@
 """
 ParaView visualization — Experiment 01: Simple Laminar Flow
 ============================================================
-Pipeline for experiment 01_simple_laminar (pimpleFoam runs to steady state;
-Plug inlet develops into a Poiseuille parabola by x ≈ 90 mm):
+Pipeline for experiment 01_simple_laminar (steady Poiseuille flow in a
+straight cylindrical vessel):
   1. Clip         — remove top half to expose the vessel interior
   2. Slice        — longitudinal midplane coloured by axial velocity (U_X)
   3. StreamTracer — streamlines coloured by U magnitude
@@ -54,7 +54,7 @@ _IS_PVPYTHON = 'pvpython' in sys.executable
 CASE_DIR = os.path.expanduser(
     "~/Rheology-Simulation-of-Vein-Grafts/run/01_simple_laminar"
 )
-RADIUS = 0.0005  # vessel inner radius [m]
+RADIUS = 0.005  # vessel inner radius [m]
 
 # ── Parse command-line arguments (overrides macro defaults; pvpython only) ────
 if _IS_PVPYTHON:
@@ -179,45 +179,45 @@ ColorBy(glyphDisplay, ('POINTS', 'U', 'Magnitude'))
 def _make_profile_chart(reader, x_pos, y_min, y_max, title, fit_parabola=True):
     """Build an XYChartView for a U_X vs y [mm] cross-section profile.
 
-    Two visual layers (bottom to top):
-      1. BAR layer  — 500-point PlotOverLine shown as a dense red histogram.
-                       Each bar is ~0.02 mm wide so they fill the area under
-                       the curve, making every sampled point visible at a glance.
-                       Legend: "Sampled Data (500 pts)"
-      2. LINE layer — fit_parabola=True : smooth Hagen-Poiseuille parabola
-                       from a degree-2 polynomial fit. Legend: "Fitted Curve (H-P)"
-                     — fit_parabola=False: 50-point connected line for plug flow.
-                       Legend: "Plug Flow (Inlet)"
+    fit_parabola=True  (outlet):
+        Fetches 200-point probe data, fits a degree-2 polynomial (physically
+        correct for the Hagen-Poiseuille parabola), injects smooth 500-point
+        curve via ProgrammableSource, overlays 25-point circle markers.
+
+    fit_parabola=False (inlet / plug flow):
+        Uses a 50-point PlotOverLine directly — data points connected by
+        straight lines with circle markers, no curve fitting applied.
+        The plug-flow profile is flat and non-parabolic; fitting a parabola
+        would be physically wrong.
     """
     import numpy as np
     from paraview import servermanager as _sm
 
-    BLUE      = ['U_X', '0.122', '0.467', '0.706']
-    RED       = ['U_X', '0.80',  '0.15',  '0.15' ]
-    LOG       = '[01_simple_laminar]'
-
-    # ── Shared: 500-point probe for the bar/histogram layer ───────────────────
-    pol_bar = PlotOverLine(Input=reader)
-    pol_bar.Point1     = [x_pos, -RADIUS, 0.0]
-    pol_bar.Point2     = [x_pos,  RADIUS, 0.0]
-    pol_bar.Resolution = 500
-    UpdatePipeline()
-
-    calc_bar = Calculator(Input=pol_bar)
-    calc_bar.AttributeType   = 'Point Data'
-    calc_bar.ResultArrayName = 'arc_length_mm'
-    calc_bar.Function        = 'arc_length * 1000'
-    UpdatePipeline()
+    BLUE = ['U_X', '0.122', '0.467', '0.706']
+    LOG  = '[01_simple_laminar]'
 
     if fit_parabola:
         # ── High-res probe for polynomial fitting ─────────────────────────────
         pol_raw = PlotOverLine(Input=reader)
         pol_raw.Point1     = [x_pos, -RADIUS, 0.0]
         pol_raw.Point2     = [x_pos,  RADIUS, 0.0]
-        pol_raw.Resolution = 300
+        pol_raw.Resolution = 200
         UpdatePipeline()
 
-        # ── Degree-2 polynomial fit (parabola) ──────────────────────────────────
+        # ── Low-res probe for markers (~1 per radial cell) ────────────────────
+        pol_pts = PlotOverLine(Input=reader)
+        pol_pts.Point1     = [x_pos, -RADIUS, 0.0]
+        pol_pts.Point2     = [x_pos,  RADIUS, 0.0]
+        pol_pts.Resolution = 25
+        UpdatePipeline()
+
+        calc_pts = Calculator(Input=pol_pts)
+        calc_pts.AttributeType   = 'Point Data'
+        calc_pts.ResultArrayName = 'arc_length_mm'
+        calc_pts.Function        = 'arc_length * 1000'
+        UpdatePipeline()
+
+        # ── Degree-2 polynomial fit (parabola) ────────────────────────────────
         smooth_src = None
         try:
             raw_data = _sm.Fetch(pol_raw)
@@ -251,11 +251,10 @@ def _make_profile_chart(reader, x_pos, y_min, y_max, title, fit_parabola=True):
             print(f"{LOG} Note: parabola fit failed ({ex}); showing raw curve")
             smooth_src = None
 
-        line_src  = smooth_src if smooth_src is not None else calc_bar
-        line_label = 'Fitted Curve (Hagen-Poiseuille)'
-
     else:
-        # ── Direct line through data points (plug-flow / inlet) ───────────────────
+        # ── Direct line through data points (plug-flow / inlet) ───────────────
+        # 50-point probe gives enough points to show the plug-flow shape clearly
+        # without curve fitting. Data points are connected by straight lines.
         pol_pts = PlotOverLine(Input=reader)
         pol_pts.Point1     = [x_pos, -RADIUS, 0.0]
         pol_pts.Point2     = [x_pos,  RADIUS, 0.0]
@@ -268,10 +267,9 @@ def _make_profile_chart(reader, x_pos, y_min, y_max, title, fit_parabola=True):
         calc_pts.Function        = 'arc_length * 1000'
         UpdatePipeline()
 
-        line_src   = calc_pts
-        line_label = 'Uniform Plug Flow (Inlet)'
+        smooth_src = None   # no separate smooth source; calc_pts is the line
 
-    # ── Chart view ─────────────────────────────────────────────────────────────────────
+    # ── Chart view ────────────────────────────────────────────────────────────
     chart = CreateView('XYChartView')
     chart.ChartTitle               = title
     chart.BottomAxisTitle          = 'y  [mm]'
@@ -283,23 +281,8 @@ def _make_profile_chart(reader, x_pos, y_min, y_max, title, fit_parabola=True):
     chart.BottomAxisRangeMinimum   = 0.0
     chart.BottomAxisRangeMaximum   = RADIUS * 2 * 1000
 
-    # ── Layer 0 (bottom): red histogram bars ───────────────────────────────────────────
-    # 500 bars across the 10 mm diameter (≍0.02 mm each) form a dense histogram
-    # that reveals the true sampled velocity profile before any curve fitting.
-    disp_bar = Show(calc_bar, chart)
-    disp_bar.UseIndexForXAxis = 0
-    disp_bar.XArrayName       = 'arc_length_mm'
-    disp_bar.SeriesVisibility = ['U_X']
-    try:
-        disp_bar.SeriesChartType   = ['U_X', '2']        # 0=Line 1=Points 2=Bar
-        disp_bar.SeriesColor       = RED
-        disp_bar.SeriesLineStyle   = ['U_X', '0']        # no bar outline
-        disp_bar.SeriesMarkerStyle = ['U_X', '0']        # no markers
-        disp_bar.SeriesLabel       = ['U_X', 'Sampled Data (500 pts)']
-    except Exception as e:
-        print(f"{LOG} Note: bar styling not applied ({e})")
-
-    # ── Layer 1 (top): smooth curve or plug-flow line ───────────────────────────
+    # Layer 1: parabola line (fit_parabola) or raw connected line (plug flow)
+    line_src  = smooth_src if smooth_src is not None else calc_pts
     disp_line = Show(line_src, chart)
     disp_line.UseIndexForXAxis = 0
     disp_line.XArrayName       = 'arc_length_mm'
@@ -308,12 +291,28 @@ def _make_profile_chart(reader, x_pos, y_min, y_max, title, fit_parabola=True):
         disp_line.SeriesColor         = BLUE
         disp_line.SeriesLineStyle     = ['U_X', '1']
         disp_line.SeriesLineThickness = ['U_X', '2']
-        disp_line.SeriesMarkerStyle   = ['U_X', '0']
-        disp_line.SeriesLabel         = ['U_X', line_label]
+        disp_line.SeriesMarkerStyle   = ['U_X', '0' if fit_parabola else '4']
+        if not fit_parabola:
+            disp_line.SeriesMarkerSize = ['U_X', '6']
     except Exception as e:
         print(f"{LOG} Note: line styling not applied ({e})")
 
+    # Layer 2: separate circle markers (only when parabola line is shown)
+    if smooth_src is not None:
+        disp_pts = Show(calc_pts, chart)
+        disp_pts.UseIndexForXAxis = 0
+        disp_pts.XArrayName       = 'arc_length_mm'
+        disp_pts.SeriesVisibility = ['U_X']
+        try:
+            disp_pts.SeriesColor       = BLUE
+            disp_pts.SeriesLineStyle   = ['U_X', '0']
+            disp_pts.SeriesMarkerStyle = ['U_X', '4']
+            disp_pts.SeriesMarkerSize  = ['U_X', '8']
+        except Exception as e:
+            print(f"{LOG} Note: marker styling not applied ({e})")
+
     return chart
+
 # ── 5. PlotOverLine — outlet U_X profile (top-right panel) ───────────────────
 # Parabola fit: H-P profile at fully-developed outlet is exactly parabolic.
 outletChart = _make_profile_chart(

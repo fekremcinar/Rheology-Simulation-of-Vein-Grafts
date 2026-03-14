@@ -47,7 +47,10 @@ solvers
 
 PIMPLE
 {
-    nOuterCorrectors    1;   // PISO mode (1 outer = no SIMPLE relaxation needed)
+    // nOuterCorrectors = 2: required because peak axial CFL ~ 1.0 at systole.
+    // One outer corrector (pure PISO) can become unstable at CFL >= 1.
+    // Two correctors provide the stability margin without excessive cost.
+    nOuterCorrectors    2;
     nCorrectors         2;
     nNonOrthogonalCorrectors 1;
 }

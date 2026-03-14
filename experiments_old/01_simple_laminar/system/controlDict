@@ -14,33 +14,27 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Experiment 01 -- Simple Laminar Flow in a Straight Tube (1 mm diameter)
-//
-// Solver: pimpleFoam (transient incompressible, PIMPLE algorithm)
-//
-// All experiments in this study use pimpleFoam for consistency.
-// For this steady-state case the transient dies out as the plug-flow
-// inlet diffuses into a parabolic profile.
-//
-// Vessel: r = 0.5 mm, D = 1 mm, L = 10 mm (L/D = 10)
-// Flow:   U_mean = 0.0306 m/ 9.3 (well in Stokes regime)Re 
-//
-// Entry length:  0.06 Entry  0.56  virtually zero.mm D 
-// CFL ~ 0.0306  0.01 / (0.01/40) = 0.0306  0.01 /  0.01200025 
-// Time step dt = 0.01 s is well within stability limits.
+// Pressure-driven variant of 01_simple_laminar.
+// Inlet: fixedValue p = 0.010566 m²/s² (= 11.2 Pa = 0.084 mmHg).
+// Outlet: fixedValue p = 0 (reference).
+// Expected steady-state: U_avg = 0.1 m/s, U_center = 0.2 m/s (Re ≈ 303).
 
-application     pimpleFoam;
+application     icoFoam;
 
 startFrom       startTime;
 startTime       0;
 
 stopAt          endTime;
-endTime         1;            // physical seconds
 
+// Run for ~10 s — well beyond the viscous diffusion time (r²/nu ≈ 7.6 s)
+// so the Poiseuille profile is fully established throughout the tube.
+endTime         10;
+
+// deltaT = 0.01 s  →  Courant = U*dt/dx = 0.1*0.01/0.005 = 0.2  (< 1 ✓)
 deltaT          0.01;
 
 writeControl    runTime;
-writeInterval   0.1;             // write at t = 0.1 s
+writeInterval   1;          // save a snapshot every 1 s → 10 output times
 
 purgeWrite      0;
 writeFormat     ascii;

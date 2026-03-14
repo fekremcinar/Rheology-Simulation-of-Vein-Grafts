@@ -14,7 +14,7 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Experiment 01: Full 3D cylinder, 1 mm diameter baseline
+// Experiment 03: same straight-tube geometry as Experiments 01 and 02 (1 mm diameter)
 // Full 3D cylinder -- O-grid (butterfly) mesh
 //
 // The O-grid uses 5 hex blocks in the cross-section:

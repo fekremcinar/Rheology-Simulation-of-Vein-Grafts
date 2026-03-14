@@ -54,7 +54,7 @@ _IS_PVPYTHON = 'pvpython' in sys.executable
 CASE_DIR = os.path.expanduser(
     "~/Rheology-Simulation-of-Vein-Grafts/run/01_simple_laminar"
 )
-RADIUS = 0.0005  # vessel inner radius [m]
+RADIUS = 0.005  # vessel inner radius [m]
 
 # ── Parse command-line arguments (overrides macro defaults; pvpython only) ────
 if _IS_PVPYTHON:

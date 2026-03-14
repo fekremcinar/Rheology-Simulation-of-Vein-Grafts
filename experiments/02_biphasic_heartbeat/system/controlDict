@@ -1,0 +1,131 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Experiment 02 -- Biphasic Pulsatile Heartbeat in a 1 mm Straight Tube
+//
+// Solver: pimpleFoam (transient incompressible)
+//
+// A pulsatile parabolic inlet waveform (biphasic, cerebral/carotid territory)
+// drives the flow for 5 cardiac cycles. The Holdsworth CCA waveform is scaled
+// to 1 mm artery via Murray's cube law. No flow reversal in this waveform.
+// The first 3 cycles are discarded (initialisation transient); OSI, TAWSS
+// and RRT are computed over the final 2 cycles (t = 2.571 s to 4.285 s).
+//
+// Vessel: r = 0.5 mm, D = 1 mm, L = 10 mm
+// Cardiac parameters:
+//   T       = 0.857 s   (70 bpm)
+//   Q_mean  = 2.404e-8 ///s  (from CCA via Murray's law: 6e-6M(0.5/3.)))15)
+//   U_mean  = 0.0306 m/s  (Q_mean / A = 2.404e-8 / 7.854e-7)
+//    3.93 Peak  9.45e-8 ///s  (systolic peak)mmean   
+//    0.120 m/s  (mean), U_ 0.240 m/speak peak  
+//    9.3,   36peak mean 
+////   Since //   Womersley 
+ ~171 steps per cycle.
+//   Peak axial CFL = U_center_peak  dt / dx = 0.240  0.005 /  0.00500025 
+//   (very  no CFL issue at this scale)small 
+//   Handled by nOuterCorrectors = 2 in fvSolution (PIMPLE loop).
+//
+ adequate for OSI/TAWSS.
+// Total output files: ~214 over 5 cycles.
+//
+// libs entry: required for the codedFixedValue inlet BC (runtime compilation).
+
+application     pimpleFoam;
+
+startFrom       startTime;
+startTime       0;
+
+stopAt          endTime;
+endTime         4.285;      // 5 x T = 5 x 0.857 s
+
+deltaT          0.005;      // 171 steps/cycle
+
+writeControl    runTime;
+writeInterval   0.02;       // 43 snapshots/ needed for accurate OSI/TAWSScycle 
+
+purgeWrite      0;
+writeFormat     ascii;
+writePrecision  6;
+writeCompression off;
+
+timeFormat      general;
+timePrecision   6;
+
+runTimeModifiable true;
+
+// Required for codedFixedValue (runtime C++ compilation of inlet BC)
+libs ("libutilityFunctionObjects.so");
+
+ Function objects // 
+// Write volumetric flow rate and pressure data every time step so the
+// ParaView script can plot Q(t) and p(t) from postProcessing files.
+//
+// flowRateInlet / flowRateOutlet
+//   Integrates the face-flux field phi [///s] over each patch.m
+//
+// pressureProbes
+//   Samples kinematic pressure p [//]] at two interior centrelinesm
+//   locations (quarter-length and three-quarter-length).
+//
+//   Probe positions (x0 = 0.0025 m, x1 = 0.0075 m, L = 0.01 m):
+//     x0 at 1/4 tube length, x1 at 3/4 tube length
+
+functions
+{
+    flowRateInlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            inlet;
+        operation       sum;
+        fields          (phi);
+    }
+
+    flowRateOutlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            outlet;
+        operation       sum;
+        fields          (phi);
+    }
+
+    pressureProbes
+    {
+        type            probes;
+        libs            ("libsampling.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        fields          (p);
+        probeLocations
+        (
+            (0.0025  0  0)   // probe 0 -- quarter-length   (x/L = 0.25)
+            (0.0075  0  0)   // probe 1 -- three-quarter-length (x/L = 0.75)
+        );
+    }
+}
+
+// ************************************************************************* //

@@ -1,0 +1,71 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Pressure-driven steady Poiseuille flow (compare with 01_simple_laminar).
+//
+// icoFoam uses KINEMATIC pressure: p_kin = p_physical / rho  [m²/s²]
+//
+// Target: reproduce the same mean velocity as 01_simple_laminar (U_avg = 0.1 m/s).
+// Hagen-Poiseuille pressure drop over L = 0.1 m, R = 0.005 m, nu = 3.3e-6 m²/s:
+//
+//   Δp_physical = 8 · μ · L · U_avg / R²
+//               = 8 × 0.0035 × 0.1 × 0.1 / 0.005²
+//               = 11.2 Pa
+//               = 0.084 mmHg       (1 mmHg = 133.322 Pa)
+//
+//   Δp_kin      = Δp_physical / rho
+//               = 11.2 / 1060
+//               = 0.010566 m²/s²   ← inlet fixedValue below
+//
+// Boundary conditions:
+//   inlet  → fixedValue = 0.010566 m²/s²  (= 11.2 Pa = 0.084 mmHg)
+//   outlet → fixedValue = 0               (pressure reference, = 0 mmHg)
+//   wall   → zeroGradient                 (no normal flux through wall)
+//
+// The pressure difference of 0.084 mmHg is physiologically tiny — a 10 cm
+// vessel contributes negligible resistance compared to arterioles (~60 mmHg).
+
+dimensions      [0 2 -2 0 0 0 0];
+
+internalField   uniform 0;
+
+boundaryField
+{
+    inlet
+    {
+        // Equivalent to: Δp = 0.084 mmHg above the outlet reference.
+        // The solver derives the inlet velocity profile from this pressure
+        // gradient — no velocity must be prescribed at the inlet.
+        type            fixedValue;
+        value           uniform 0.010566;   // m²/s²  (= 11.2 Pa = 0.084 mmHg)
+    }
+
+    outlet
+    {
+        // Pressure reference: zero gauge. Physical pressure here is whatever
+        // the venous/downstream system imposes; only the Δp across the vessel
+        // drives the flow, so the absolute reference cancels out.
+        type            fixedValue;
+        value           uniform 0;
+    }
+
+    wall
+    {
+        type            zeroGradient;
+    }
+}
+
+// ************************************************************************* //

@@ -10,46 +10,39 @@ FoamFile
     version     2.0;
     format      ascii;
     class       dictionary;
-    object      fvSolution;
+    object      fvSchemes;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-solvers
+ddtSchemes
 {
-    p
-    {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       1e-06;
-        relTol          0.05;
-    }
-
-    pFinal
-    {
-        $p;
-        relTol          0;
-    }
-
-    U
-    {
-        solver          smoothSolver;
-        smoother        symGaussSeidel;
-        tolerance       1e-05;
-        relTol          0.1;
-    }
-
-    UFinal
-    {
-        $U;
-        relTol          0;
-    }
+    default         Euler;          // First-order implicit time integration
 }
 
-PIMPLE
+gradSchemes
 {
-    nOuterCorrectors    1;   // PISO mode (1 outer = no SIMPLE relaxation needed)
-    nCorrectors         2;
-    nNonOrthogonalCorrectors 1;
+    default         Gauss linear;
+}
+
+divSchemes
+{
+    default         none;
+    div(phi,U)      Gauss linear;   // Central differencing — suitable for laminar flow
+}
+
+laplacianSchemes
+{
+    default         Gauss linear corrected;
+}
+
+interpolationSchemes
+{
+    default         linear;
+}
+
+snGradSchemes
+{
+    default         corrected;
 }
 
 // ************************************************************************* //

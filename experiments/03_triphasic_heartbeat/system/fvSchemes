@@ -14,14 +14,19 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Steady-state schemes for pimpleFoam running to steady state.
-// Euler for ddt (1st-order, robust for start-up transient).
-// linearUpwind is more stable than pure central (linear) for PIMPLE
-// while still giving second-order accuracy on structured meshes.
+// Transient pulsatile schemes for pimpleFoam.
+//
+// CrankNicolson 0.9 for ddt: second-order temporal accuracy is important
+// here because we are resolving the cardiac waveform in time. The blending
+// coefficient 0.9 gives near-CN accuracy while avoiding the odd-even
+// pressure oscillations of pure CN (coefficient = 1.0).
+//
+// linearUpwind for div: bounded second-order; well-suited to structured
+// O-grid meshes and prevents spurious oscillations near the axis.
 
 ddtSchemes
 {
-    default         Euler;
+    default         CrankNicolson 0.9;
 }
 
 gradSchemes
@@ -33,8 +38,8 @@ gradSchemes
 divSchemes
 {
     default         none;
-    div(phi,U)      Gauss linearUpwind grad(U);   // bounded 2nd order
-    div((nuEff*dev2(T(grad(U))))) Gauss linear;   // viscous stress (required by simpleFoam)
+    div(phi,U)      Gauss linearUpwind grad(U);
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;
 }
 
 laplacianSchemes

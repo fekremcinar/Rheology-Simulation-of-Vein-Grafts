@@ -35,21 +35,16 @@ solvers
         solver          smoothSolver;
         smoother        symGaussSeidel;
         tolerance       1e-05;
-        relTol          0.1;
-    }
-
-    UFinal
-    {
-        $U;
         relTol          0;
     }
 }
 
-PIMPLE
+PISO
 {
-    nOuterCorrectors    1;   // PISO mode (1 outer = no SIMPLE relaxation needed)
-    nCorrectors         2;
-    nNonOrthogonalCorrectors 1;
+    nCorrectors             2;
+    nNonOrthogonalCorrectors 0;
+    pRefCell                0;
+    pRefValue               0;
 }
 
 // ************************************************************************* //

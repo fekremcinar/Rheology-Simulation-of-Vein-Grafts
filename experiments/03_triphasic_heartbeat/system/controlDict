@@ -1,0 +1,122 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Experiment 03 -- Triphasic Pulsatile Heartbeat in a 1 mm Straight Tube
+//
+// Solver: pimpleFoam (transient incompressible)
+//
+// A pulsatile parabolic inlet waveform (triphasic, peripheral/femoral territory)
+// drives the flow for 5 cardiac cycles. The Mikheev SFA waveform is scaled
+// to 1 mm artery via Murray's cube law. This waveform includes flow reversal
+// in early  a key feature of peripheral arteries at rest.diastole 
+// The first 3 cycles are discarded (initialisation transient); OSI, TAWSS
+// and RRT are computed over the final 2 cycles (t = 2.571 s to 4.285 s).
+//
+// Vessel: r = 0.5 mm, D = 1 mm, L = 10 mm
+// Cardiac parameters:
+//   T       = 0.857 s   (70 bpm)
+//   Q_mean  = 1.656e-8 ///s  (from SFA via Murray's law: 2.07e-6M(0.5/2.)))5)
+//   U_mean  = 0.02109 m/s  (Q_mean / A = 1.656e-8 / 7.854e-7)
+//    12 Peak Q_mean  (systolic peak, AU=12)  
+3.2  Q_mean  (maximum flow reversal at ~35% of cycle)
+//    6.4,   77peak mean 
+////   Womersley 
+// Waveform source: Mikheev et al. (2020), J. Phys.: Conf. Series 1683:022090.
+//   Physical simulation of femoral artery flow. AU =  12.Umean 
+//
+// Note on flow reversal: During the reversal phase, the inlet acts as an
+// outflow boundary (u < 0). The outlet (with zeroGradient) acts as inflow.
+// This is physically correct for triphasic waveforms. Both patches use
+// zeroGradient to avoid blocking reversed flow.
+//
+ ~171 steps per cycle.
+ ~43 snapshots per cycle.
+//
+// libs entry: required for the codedFixedValue inlet BC (runtime compilation).
+
+application     pimpleFoam;
+
+startFrom       startTime;
+startTime       0;
+
+stopAt          endTime;
+endTime         4.285;      // 5 x T = 5 x 0.857 s
+
+deltaT          0.005;      // 171 steps/cycle
+
+writeControl    runTime;
+writeInterval   0.02;       // 43 snapshots/ needed for accurate OSI/TAWSScycle 
+
+purgeWrite      0;
+writeFormat     ascii;
+writePrecision  6;
+writeCompression off;
+
+timeFormat      general;
+timePrecision   6;
+
+runTimeModifiable true;
+
+// Required for codedFixedValue (runtime C++ compilation of inlet BC)
+libs ("libutilityFunctionObjects.so");
+
+ Function objects // 
+functions
+{
+    flowRateInlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            inlet;
+        operation       sum;
+        fields          (phi);
+    }
+
+    flowRateOutlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            outlet;
+        operation       sum;
+        fields          (phi);
+    }
+
+    pressureProbes
+    {
+        type            probes;
+        libs            ("libsampling.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        fields          (p);
+        probeLocations
+        (
+            (0.0025  0  0)   // probe 0 -- quarter-length   (x/L = 0.25)
+            (0.0075  0  0)   // probe 1 -- three-quarter-length (x/L = 0.75)
+        );
+    }
+}
+
+// ************************************************************************* //

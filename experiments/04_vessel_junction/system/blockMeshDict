@@ -1,0 +1,306 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2512                                  |
+|   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      blockMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Experiment 03 — Heartbeat Flow Through a Vessel Junction (No Graft)
+// Sudden step contraction: r1 = 5 mm (donor) → r2 = 3 mm (recipient)
+//
+// Coordinate system:
+//   x : flow direction
+//   y : horizontal
+//   z : vertical
+//
+// Geometry:
+//   Upstream   (x = 0       to 0.06 m) : r1 = 0.005 m  (L1 = 60 mm ≥ 10 × r1 ✓)
+//   Junction   (x = 0.06 m)            : sudden step, annular step-wall face
+//   Downstream (x = 0.06    to 0.10 m) : r2 = 0.003 m  (L2 = 40 mm ≥ 10 × r2 ✓)
+//
+// O-grid topology — 14 hex blocks, 32 vertices:
+//   Cross-section uses THREE concentric layers:
+//     Layer 0 : inner square   half-width a = 0.001 m
+//     Layer 1 : intermediate ring at r2/√2 = 0.002121 m  (r2 arc corners)
+//     Layer 2 : outer ring     at r1/√2 = 0.003536 m  (r1 arc corners)
+//
+//   Inlet (x = 0 → 0.06) :  9 blocks
+//     1 centre block   (layer 0)
+//     4 inner blocks   (layer 0 → layer 1, connect to outlet outer blocks)
+//     4 outer blocks   (layer 1 → layer 2, terminate at step wall)
+//
+//   Outlet (x = 0.06 → 0.10) : 5 blocks
+//     1 centre block   (layer 0)
+//     4 outer blocks   (layer 0 → layer 1, r2 is the downstream wall)
+//
+//   Connectivity at junction (x = 0.06):
+//     Inlet centre end-face      ↔  Outlet centre start-face       (internal)
+//     Inlet inner block end-face ↔  Outlet outer block start-face  (internal)
+//     Inlet outer block end-face →  step wall patch (annular, no downstream block)
+//
+// Key dimensions:
+//   a   = 0.001    m   inner square half-width
+//   b   = 0.002121 m   r2/√2  (r2 ring corner, 45° on r2 circle)
+//   c   = 0.003536 m   r1/√2  (r1 ring corner, 45° on r1 circle)
+//   L1  = 0.06     m   inlet length
+//   L   = 0.10     m   total length
+//
+// Mesh resolution:
+//   Axial   : 24 cells (inlet, Δx = 2.5 mm) / 16 cells (outlet, Δx = 2.5 mm)
+//   Core    : 12 × 12 cells (centre block)
+//   Radial  :  8 cells per ring, grading 0.25 (4:1 toward the outer wall)
+//   Total   : ≈ 30 000 cells
+
+scale 1;
+
+vertices
+(
+    // ── Inlet plane  x = 0 ──────────────────────────────────────────────
+    // Inner square corners  (a = 0.001 m)
+    ( 0      0.001   -0.001   )  //  0  inner  +y −z
+    ( 0      0.001    0.001   )  //  1  inner  +y +z
+    ( 0     -0.001    0.001   )  //  2  inner  −y +z
+    ( 0     -0.001   -0.001   )  //  3  inner  −y −z
+
+    // r2-ring corners  (b = r2/√2 = 0.002121 m)
+    ( 0      0.002121 -0.002121)  //  4  r2  315°  (+y −z)
+    ( 0      0.002121  0.002121)  //  5  r2   45°  (+y +z)
+    ( 0     -0.002121  0.002121)  //  6  r2  135°  (−y +z)
+    ( 0     -0.002121 -0.002121)  //  7  r2  225°  (−y −z)
+
+    // r1-ring corners  (c = r1/√2 = 0.003536 m)
+    ( 0      0.003536 -0.003536)  //  8  r1  315°  (+y −z)
+    ( 0      0.003536  0.003536)  //  9  r1   45°  (+y +z)
+    ( 0     -0.003536  0.003536)  // 10  r1  135°  (−y +z)
+    ( 0     -0.003536 -0.003536)  // 11  r1  225°  (−y −z)
+
+    // ── Junction plane  x = L1 = 0.06 m ─────────────────────────────────
+    // Inner square corners
+    ( 0.06   0.001   -0.001   )  // 12  inner  +y −z
+    ( 0.06   0.001    0.001   )  // 13  inner  +y +z
+    ( 0.06  -0.001    0.001   )  // 14  inner  −y +z
+    ( 0.06  -0.001   -0.001   )  // 15  inner  −y −z
+
+    // r2-ring corners (shared inlet-inner / outlet-outer block boundary)
+    ( 0.06   0.002121 -0.002121)  // 16  r2  315°
+    ( 0.06   0.002121  0.002121)  // 17  r2   45°
+    ( 0.06  -0.002121  0.002121)  // 18  r2  135°
+    ( 0.06  -0.002121 -0.002121)  // 19  r2  225°
+
+    // r1-ring corners (step-wall outer edge, annular step face)
+    ( 0.06   0.003536 -0.003536)  // 20  r1  315°
+    ( 0.06   0.003536  0.003536)  // 21  r1   45°
+    ( 0.06  -0.003536  0.003536)  // 22  r1  135°
+    ( 0.06  -0.003536 -0.003536)  // 23  r1  225°
+
+    // ── Outlet plane  x = L = 0.10 m ────────────────────────────────────
+    // Inner square corners
+    ( 0.10   0.001   -0.001   )  // 24  inner  +y −z
+    ( 0.10   0.001    0.001   )  // 25  inner  +y +z
+    ( 0.10  -0.001    0.001   )  // 26  inner  −y +z
+    ( 0.10  -0.001   -0.001   )  // 27  inner  −y −z
+
+    // r2-ring corners (downstream wall corners)
+    ( 0.10   0.002121 -0.002121)  // 28  r2  315°
+    ( 0.10   0.002121  0.002121)  // 29  r2   45°
+    ( 0.10  -0.002121  0.002121)  // 30  r2  135°
+    ( 0.10  -0.002121 -0.002121)  // 31  r2  225°
+);
+
+// Cross-section topology (looking from −x, i.e. looking downstream):
+//
+//  Inlet cross-section (9 blocks):
+//
+//      11──────10──────9──────8
+//       \  7──6  3──2  5──4  /
+//        \ │  │  │C │  │  │ /
+//        \ │  │  │  │  │  │/
+//         7  6──3──2──1──4  8  (arc from 225° to 315° via 315°)
+//         |  |  |  |  |  |  |
+//         7  7──3──0──0──4  8
+//          \ │  │     │  │ /
+//           \7──6  3──2  4/
+//            \  │  │  │  /
+//            11──10─9──8
+//
+// Schematic (quadrant labels):
+//     outer-sub-left  | outer-sub-top
+//     inner-left      | inner-top
+//     ─────────── C ──────────
+//     inner-right     | inner-bottom (wait, z-down)
+//     outer-sub-right | outer-sub-bottom
+//
+// C = centre block          : hex ( 3  0  1  2  15 12 13 14)
+// IR = inner right block    : hex ( 0  4  5  1  12 16 17 13)  — layer 0→1, right
+// IT = inner top block      : hex ( 1  5  6  2  13 17 18 14)  — layer 0→1, top
+// IL = inner left block     : hex ( 2  6  7  3  14 18 19 15)  — layer 0→1, left
+// IB = inner bottom block   : hex ( 3  7  4  0  15 19 16 12)  — layer 0→1, bottom
+// OR = outer-sub right      : hex ( 4  8  9  5  16 20 21 17)  — layer 1→2, right
+// OT = outer-sub top        : hex ( 5  9 10  6  17 21 22 18)  — layer 1→2, top
+// OL = outer-sub left       : hex ( 6 10 11  7  18 22 23 19)  — layer 1→2, left
+// OB = outer-sub bottom     : hex ( 7 11  8  4  19 23 20 16)  — layer 1→2, bottom
+//
+//  Outlet cross-section (5 blocks):
+//
+// C  = centre               : hex (15 12 13 14  27 24 25 26)
+// DR = outlet outer right   : hex (12 16 17 13  24 28 29 25)  — layer 0→1, right
+// DT = outlet outer top     : hex (13 17 18 14  25 29 30 26)  — layer 0→1, top
+// DL = outlet outer left    : hex (14 18 19 15  26 30 31 27)  — layer 0→1, left
+// DB = outlet outer bottom  : hex (15 19 16 12  27 31 28 24)  — layer 0→1, bottom
+
+blocks
+(
+    // ── Inlet section (x = 0 to 0.06) ───────────────────────────────────
+
+    // Centre block — no radial grading needed
+    hex ( 3  0  1  2  15 12 13 14) (12 12 24) simpleGrading (1    1 1)
+
+    // Inner ring — graded toward r2 (finer near junction boundary)
+    hex ( 0  4  5  1  12 16 17 13) ( 8 12 24) simpleGrading (0.25 1 1)  // right
+    hex ( 1  5  6  2  13 17 18 14) ( 8 12 24) simpleGrading (0.25 1 1)  // top
+    hex ( 2  6  7  3  14 18 19 15) ( 8 12 24) simpleGrading (0.25 1 1)  // left
+    hex ( 3  7  4  0  15 19 16 12) ( 8 12 24) simpleGrading (0.25 1 1)  // bottom
+
+    // Outer sub-blocks — graded toward r1 wall (finer near upstream wall)
+    hex ( 4  8  9  5  16 20 21 17) ( 8 12 24) simpleGrading (0.25 1 1)  // right
+    hex ( 5  9 10  6  17 21 22 18) ( 8 12 24) simpleGrading (0.25 1 1)  // top
+    hex ( 6 10 11  7  18 22 23 19) ( 8 12 24) simpleGrading (0.25 1 1)  // left
+    hex ( 7 11  8  4  19 23 20 16) ( 8 12 24) simpleGrading (0.25 1 1)  // bottom
+
+    // ── Outlet section (x = 0.06 to 0.10) ───────────────────────────────
+    // (Inlet inner blocks share faces with outlet outer blocks at x = 0.06)
+
+    // Centre block
+    hex (15 12 13 14  27 24 25 26) (12 12 16) simpleGrading (1    1 1)
+
+    // Outer blocks — graded toward r2 wall
+    hex (12 16 17 13  24 28 29 25) ( 8 12 16) simpleGrading (0.25 1 1)  // right
+    hex (13 17 18 14  25 29 30 26) ( 8 12 16) simpleGrading (0.25 1 1)  // top
+    hex (14 18 19 15  26 30 31 27) ( 8 12 16) simpleGrading (0.25 1 1)  // left
+    hex (15 19 16 12  27 31 28 24) ( 8 12 16) simpleGrading (0.25 1 1)  // bottom
+);
+
+// Arc edges — enforce true circular cross-sections
+// Midpoint of each arc lies on the circle at the cardinal angle between the two endpoints
+edges
+(
+    // ── x = 0 (inlet plane) ──────────────────────────────────────────────
+    // r2 arcs (r2 = 0.003 m)
+    arc  4  5 ( 0     0.003   0      )  //  315° →  45°  midpoint at   0° (right)
+    arc  5  6 ( 0     0       0.003  )  //   45° → 135°  midpoint at  90° (top)
+    arc  6  7 ( 0    -0.003   0      )  //  135° → 225°  midpoint at 180° (left)
+    arc  7  4 ( 0     0      -0.003  )  //  225° → 315°  midpoint at 270° (bottom)
+
+    // r1 arcs (r1 = 0.005 m)
+    arc  8  9 ( 0     0.005   0      )
+    arc  9 10 ( 0     0       0.005  )
+    arc 10 11 ( 0    -0.005   0      )
+    arc 11  8 ( 0     0      -0.005  )
+
+    // ── x = 0.06 (junction plane) ────────────────────────────────────────
+    // r2 arcs
+    arc 16 17 ( 0.06  0.003   0      )
+    arc 17 18 ( 0.06  0       0.003  )
+    arc 18 19 ( 0.06 -0.003   0      )
+    arc 19 16 ( 0.06  0      -0.003  )
+
+    // r1 arcs (outer edge of step-wall annulus)
+    arc 20 21 ( 0.06  0.005   0      )
+    arc 21 22 ( 0.06  0       0.005  )
+    arc 22 23 ( 0.06 -0.005   0      )
+    arc 23 20 ( 0.06  0      -0.005  )
+
+    // ── x = 0.10 (outlet plane) ──────────────────────────────────────────
+    // r2 arcs
+    arc 28 29 ( 0.10  0.003   0      )
+    arc 29 30 ( 0.10  0       0.003  )
+    arc 30 31 ( 0.10 -0.003   0      )
+    arc 31 28 ( 0.10  0      -0.003  )
+);
+
+boundary
+(
+    // ── Inlet face (x = 0, outward normal = −x) ──────────────────────────
+    // Face ordering: (v0 v3 v2 v1) gives −x outward normal for each block's
+    // k=0 face, matching the convention from Experiment 02.
+    inlet
+    {
+        type patch;
+        faces
+        (
+            // Centre
+            ( 3  2  1  0)
+
+            // Inner ring (inner square → r2 boundary)
+            ( 0  1  5  4)   // right
+            ( 1  2  6  5)   // top
+            ( 2  3  7  6)   // left
+            ( 3  0  4  7)   // bottom
+
+            // Outer sub-blocks (r2 → r1)
+            ( 4  5  9  8)   // right
+            ( 5  6 10  9)   // top
+            ( 6  7 11 10)   // left
+            ( 7  4  8 11)   // bottom
+        );
+    }
+
+    // ── Outlet face (x = 0.10, outward normal = +x) ──────────────────────
+    outlet
+    {
+        type patch;
+        faces
+        (
+            // Centre
+            (27 24 25 26)
+
+            // Outlet outer blocks (inner square → r2)
+            (24 28 29 25)   // right
+            (25 29 30 26)   // top
+            (26 30 31 27)   // left
+            (27 31 28 24)   // bottom
+        );
+    }
+
+    // ── No-slip walls ─────────────────────────────────────────────────────
+    // All three wall zones (upstream r1 cylinder, annular step, downstream r2
+    // cylinder) are merged into one "wall" patch.  They can be split into
+    // separate named patches here if finer post-processing control is needed.
+    wall
+    {
+        type wall;
+        faces
+        (
+            // Upstream cylinder wall (r1 = 0.005 m), outer-sub block i=Ni faces
+            // (v1 v2 v6 v5 pattern)
+            ( 8  9 21 20)   // right arc, x 0→0.06
+            ( 9 10 22 21)   // top  arc
+            (10 11 23 22)   // left arc
+            (11  8 20 23)   // bottom arc
+
+            // Annular step wall (x = 0.06), outer-sub block k=Nk faces
+            // outward normal = +x (away from upstream fluid)
+            (16 20 21 17)   // right sector
+            (17 21 22 18)   // top  sector
+            (18 22 23 19)   // left sector
+            (19 23 20 16)   // bottom sector
+
+            // Downstream cylinder wall (r2 = 0.003 m), outlet outer block i=Ni faces
+            (16 17 29 28)   // right arc, x 0.06→0.10
+            (17 18 30 29)   // top  arc
+            (18 19 31 30)   // left arc
+            (19 16 28 31)   // bottom arc
+        );
+    }
+);
+
+// ************************************************************************* //

@@ -14,36 +14,45 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Pressure-driven flow: velocity is NOT prescribed at the inlet.
-// The flow profile develops naturally from the inlet-to-outlet pressure
-// gradient set in 0/p (Δp = 0.084 mmHg).
+// Velocity-driven steady Poiseuille validation (pimpleFoam).
 //
-// Expected steady-state (Hagen-Poiseuille):
-//   U_avg    = 0.1  m/s   (mean over cross-section)
-//   U_center = 0.2  m/s   (centreline peak of the parabola)
-//   Re       = U_avg · 2R / nu = 0.1 · 0.01 / 3.3e-6 ≈ 303  (laminar ✓)
+// A uniform (plug) velocity of 0.0306 m/s is prescribed at the inlet.
+// This corresponds to the Murray's-law-scaled mean flow rate for a 1 mm
+// diameter artery derived from the Holdsworth CCA waveform (biphasic).
 //
-// Compare with 01_simple_laminar which prescribes uniform U = 0.1 m/s at inlet:
-//   - Both should converge to the same fully-developed parabolic profile.
-//   - Entry length differs: pressure-driven allows natural profile development
-//     from the very first cell, whereas velocity-driven imposes a blunt profile.
+//   Q_mean_1mm = 6e-6  (0.5/3.   = 2.404e-8 ///sm15)
+//   A          =   (0.        = 7.854e-7 m0005)
+//   U_mean     = Q/A                 = 0.03061  0.0306 m/ss 
+//
+// pimpleFoam iterates toward the steady-state parabolic Hagen-Poiseuille
+// profile without time-marching much faster than for large-Re cases.
+//
+// Expected steady-state:
+//   U_avg    = 0.0306 m/s  (prescribed mean, plug flow)
+//   U_center = 0.0612 m/s  (centreline peak of the Poiseuille parabola)
+//   Re       = U_avg  2R / nu = 0.0306  0.001 / 3. 9.3  ()laminar 6 
+//
+//  9, the flow is well in the Stokes regime. Entry length:Re 
+//    0.06 Entry Re   D = 0.06  9.3   0.56 mm001 
+// The profile is virtually fully developed within the first cell.
 
 dimensions      [0 1 -1 0 0 0 0];
 
-internalField   uniform (0 0 0);
+internalField   uniform (0.0306 0 0);
 
 boundaryField
 {
     inlet
     {
-        // Velocity is free to develop from the pressure gradient.
-        // zeroGradient is the correct Neumann BC for a pressure-driven inlet.
-        type            zeroGradient;
+        type            fixedValue;
+        value           uniform (0.0306 0 0);
     }
 
     outlet
     {
-        // Allow flow to exit without constraining the velocity profile.
+        // zeroGradient: fully-developed outflow assumption.
+        // For this near-Stokes steady-state case there is no backflow risk,
+        // so zeroGradient is correct and more numerically robust than inletOutlet.
         type            zeroGradient;
     }
 
