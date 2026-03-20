@@ -84,77 +84,27 @@ Every experiment folder follows the standard OpenFOAM layout:
 
 ### Inlet Boundary Condition
 
-A physiologically realistic inlet uses a **Womersley pulsatile velocity profile** based on
-a cardiac waveform (T = 0.857 s, 70 bpm), Fourier-decomposed into N = 20 harmonics:
+The inlet uses a **time-varying parabolic (Hagen-Poiseuille) velocity profile**:
 
-```
-U(r,t) = 2·U₀·(1−η²)  +  Σₙ Re[Ûₙ · W_n(η) · e^(inω₀t)]
-```
+    u(r, t) = 2 · Q(t) / (π r₀²) · (1 − r²/r₀²)
 
-where η = r/R, Û_n are the complex Fourier amplitudes of U_mean(t), and W_n(η) is the
-Womersley shape function for harmonic n (Womersley 1955):
+For a 1 mm artery, viscous forces dominate inertia (pulsatility parameter α ≈ 0.745 ≪ 2),
+so the profile remains parabolic at every instant — no higher-order correction is needed.
+This is implemented via `codedFixedValue` in `0/U`.
 
-```
-Λ_n = R·√(i·n·ω₀/ν),   W_n(η) = [1 − J₀(Λ_n η)/J₀(Λ_n)] / [1 − 2J₁(Λ_n)/(Λ_n J₀(Λ_n))]
-```
+### Q(t) Waveform: Sources and Scaling
 
-A simple sinusoidal wave `Q(t) = Q_mean + Q_amp sin(ωt)` is **not physiologically accurate**
-because it misses the asymmetric cardiac waveform shape, including the **dicrotic notch** (brief
-dip at aortic valve closure), the short systolic peak (~17% of cycle), and the long diastolic
-decay. From Experiment 02 onward, the waveform is based on the **Holdsworth et al. (1999)**
-archetypal common carotid artery (CCA) waveform — the most widely used reference for
-physiological pulsatile-flow simulations:
-
-| Feature | Value (Holdsworth 1999, scaled to 70 bpm) |
-|---|---|
-| Period T | 0.857 s (70 bpm) |
-| Peak systole | U_mean = 0.50 m/s at t = 0.142 s (φ = 0.166T) |
-| Dicrotic notch | U_mean ≈ 0.10 m/s at t = 0.372 s (φ = 0.434T) |
-| End-diastolic | U_mean = 0.05 m/s |
-| Q_peak | ≈ 39.2 mL/s (R = 5 mm) |
-| Q_notch | ≈ 7.9 mL/s at t = 0.372 s |
-| Q_mean (DC) | ≈ 10.3 mL/s |
-
-For Experiment 01 (baseline) a constant velocity is sufficient. From
-Experiment 02 onward the Womersley inlet is applied.
-
-In OpenFOAM this is implemented with:
-- `uniformFixedValue` + `table` for a flat-profile pulsatile inlet (simple)
-- `codedFixedValue` with precomputed Womersley shape-function lookup tables (Experiments 02+)
-
-The Womersley profile automatically satisfies the no-slip condition at the wall (W_n(1) = 0)
-and produces the correct blunt plug profile at high α, including the physiologically important
-**near-wall flow reversal ring** during the deceleration phase of diastole.
-
-### Derivation of Q(t) for a 1 mm Artery
-
-A physiologically realistic Q(t) for a 1 mm artery cannot be measured directly (Doppler
-resolution limits) but is derived from larger-vessel measurements using Murray's cube law.
-
-**Murray's Law (cube law):**
-Murray's law [3] states that for a branching arterial tree under minimum energy conditions:
-
-    Q ∝ r^ξ    where ξ = 3.0 (steady laminar, Murray 1926) or ξ = 2.76 (pulsatile, Olufsen 2000)
-
-This project uses ξ = 3.0 (conservative estimate). The scaling formula is:
+Flow rate Q(t) for a 1 mm artery cannot be measured directly (Doppler resolution limits).
+It is derived from published measurements on larger arteries using **Murray's cube law** [3](#ref-3):
 
     Q_mean(1mm) = Q_mean(ref) × (r_1mm / r_ref)³
 
-**Womersley Number at 1 mm:**
-
-    α = r × √(ω / ν) = 0.0005 × √(2π × 70/60 / 3.3×10⁻⁶) ≈ 0.745
-
-Since α ≪ 2, viscous forces dominate inertia and the velocity profile is parabolic at every
-instant (quasi-Poiseuille regime). The full Womersley profile reduces to:
-
-    u(r, t) = 2 × Q(t)/A × (1 − (r/r₀)²)
-
-This is confirmed by Madhavan & Kemmerling (2018) [11]: differences between plug, parabolic,
-and Womersley inlet profiles vanish within 1.75 diameters of the inlet.
+The normalized waveform shape Q(t)/Q_mean is taken directly from the source paper;
+only the amplitude is scaled to the 1 mm vessel.
 
 **Option A — Biphasic (cerebral/carotid territory):**
 
-Source: Holdsworth et al. (1999) [1], common carotid artery (CCA), 17 subjects, 3560 cycles.
+Source: Holdsworth et al. (1999) [1](#ref-1), common carotid artery (CCA), 17 subjects, 3560 cycles.
 - Reference: r_CCA = 3.15 mm, Q_mean = 6.0 mL/s, T = 0.917 s
 - Scaled: Q_mean(1mm) = 6.0 × (0.5/3.15)³ = **0.024 mL/s**, T = 0.857 s (70 bpm)
 - Waveform shape: biphasic — large systolic peak (Q_peak ≈ 3.93 × Q_mean), brief dicrotic
@@ -163,16 +113,16 @@ Source: Holdsworth et al. (1999) [1], common carotid artery (CCA), 17 subjects, 
 Physical basis: In small peripheral arteries such as the saphenous artery, McDonald's
 *Blood Flow in Arteries* (Chapter 9) explicitly states: *"there is no backflow and the flow
 fluctuations are very small"* — attributed to high impedance at low harmonics near the
-peripheral reflecting sites. Reymond et al. (2009) [4] confirms that in cerebral and carotid
+peripheral reflecting sites. Reymond et al. (2009) [4](#ref-4) confirms that in cerebral and carotid
 branches, *"flow is purely unidirectional."*
 
 ![Biphasic Q(t) waveform — Holdsworth CCA 1999, scaled to 1 mm artery](assets/img/qt_biphasic_waveform.png)
 
 **Option B — Triphasic (peripheral/femoral territory):**
 
-Source: Mikheev et al. (2020) [2], superficial femoral artery (SFA), physical simulation.
+Source: Mikheev et al. (2020) [2](#ref-2), superficial femoral artery (SFA), physical simulation.
 - Reference: r_SFA = 2.5 mm, Q_mean = 2.07 mL/s, AU = U_max/U_mean ≈ 12
-- Scaled: Q_mean(1mm) = 2.07 × (0.5/2.5)³ = **16.6 μl/s**, T = 0.857 s (70 bpm)
+- Scaled: Q_mean(1mm) = 2.07 × (0.5/2.5)³ = **0.0166 mL/s**, T = 0.857 s (70 bpm)
 - Waveform shape: triphasic — high systolic peak (AU ≈ 12), flow reversal in early diastole
   (caused by wave reflections from the high-resistance resting muscle bed), then a small
   secondary antegrade peak.
@@ -184,35 +134,20 @@ scenario to test how flow reversal influences hemodynamic indices at anastomosis
 
 ![Triphasic Q(t) waveform — Mikheev SFA 2020, scaled to 1 mm artery](assets/img/qt_triphasic_waveform.png)
 
-**Velocity Profile (both experiments):**
-
-Since α = 0.745 ≪ 2 for a 1 mm artery, the Womersley profile collapses to the Hagen-Poiseuille
-parabola at every instant [3,5]:
-
-    u(r, t) = 2 · Q(t) / (π r₀²) · (1 − r²/r₀²)
-
-This is implemented via `codedFixedValue` in `0/U`. See `assets/scripts/generate_qt_waveforms.py`
-for the waveform digitization and scaling procedure.
+See `assets/scripts/generate_qt_waveforms.py` for the waveform digitization and scaling procedure.
 
 **Operating range for a 1 mm artery:**
 
 | Quantity | Biphasic (Option A) | Triphasic (Option B) |
 |----------|---------------------|----------------------|
-| Q_mean   | 24 μl/s             | 16.6 μl/s            |
-| Q_peak   | 94 μl/s             | 200 μl/s             |
+| Q_mean   | 0.024 mL/s             | 0.0166 mL/s            |
+| Q_peak   | 0.094 mL/s             | 0.200 mL/s             |
 | U_mean   | 3.1 cm/s            | 2.1 cm/s             |
 | U_center_peak | 24 cm/s        | 51 cm/s              |
 | Re_mean  | 9.3                 | 6.4                  |
 | Re_peak  | 36                  | 77                   |
 
 ### Outlet Boundary Condition
-
-A **Windkessel (3-element RC) model** is the most physiologically accurate outlet, but
-requires patient-specific calibration of R1, R2, and C, and is not available as a standard
-OpenFOAM boundary condition. It is unnecessarily complex for early-stage parametric studies
-where the region of interest is far from the outlet.
-
-**Chosen approach for all experiments:**
 
 | Field | Outlet BC |
 |-------|-----------|
@@ -263,9 +198,9 @@ simplicity and comparability. Experiment 06 can include a Carreau comparison if 
 
 ### Simulation Duration
 
-At least **5 cardiac cycles** should be simulated for transient experiments. The first
-2–3 cycles contain start-up transients and must be **discarded**. Hemodynamic metrics
-(WSS, OSI, RRT) are averaged over the **last 2 cycles** only.
+**3 cardiac cycles** are simulated (endTime = 2.571 s at 70 bpm). The first cycle is
+**omitted** to allow start-up transients to dissipate. Hemodynamic metrics (WSS, OSI, RRT)
+are computed from the **last 2 cycles** (t = 0.857 s to 2.571 s) only.
 
 ---
 
@@ -332,39 +267,6 @@ Use this scorecard to compare experiments. Lower scores are better for thrombosi
 | 04 — Direct junction | | | | | |
 | 05 — Graft radius sweep | | | | | |
 | 06 — Elastic wall | | | | | |
-
-### Computing Metrics in OpenFOAM
-
-Add to `system/controlDict` under `functions`:
-
-```c
-functions
-{
-    wallShearStress
-    {
-        type            wallShearStress;
-        libs            (fieldFunctionObjects);
-        writeControl    writeTime;
-    }
-
-    pressureProbes
-    {
-        type            probes;
-        libs            (sampling);
-        writeControl    timeStep;
-        writeInterval   10;
-        fields          (p U);
-        probeLocations
-        (
-            (0.00  0 0)   // inlet face centre
-            (0.10  0 0)   // outlet face centre (adjust per geometry)
-        );
-    }
-}
-```
-
-OSI and RRT are post-processed from the `wallShearStress` time series in ParaView or Python
-after the simulation completes.
 
 ---
 
@@ -434,7 +336,7 @@ complexity in later experiments.
 
 **Geometry:** Same 1 mm straight tube as Experiment 01 (r = 0.5 mm, L = 10 mm).
 
-**Waveform:** Holdsworth et al. (1999) [1] CCA waveform scaled to 1 mm via Murray's law.
+**Waveform:** Holdsworth et al. (1999) [1](#ref-1) CCA waveform scaled to 1 mm via Murray's law.
 No flow reversal. See [Derivation of Q(t)](#derivation-of-qt-for-a-1-mm-artery).
 
 **Boundary conditions:**
@@ -446,7 +348,7 @@ No flow reversal. See [Derivation of Q(t)](#derivation-of-qt-for-a-1-mm-artery).
 | Wall | `noSlip` | `zeroGradient` |
 
 **Key parameters:**
-- Q_mean = 24 μl/s, Q_peak = 94 μl/s, U_mean = 3.1 cm/s, Re_mean = 9.3, Re_peak = 36
+- Q_mean = 0.024 mL/s, Q_peak = 0.094 mL/s, U_mean = 3.1 cm/s, Re_mean = 9.3, Re_peak = 36
 - Run for 3 cardiac cycles (endTime = 2.571 s); discard first cycle as start-up transient; compute TAWSS, OSI, RRT from t = 0.857 s to 2.571 s
 
 **Run:**
@@ -481,7 +383,7 @@ pimpleFoam
 
 **Geometry:** Same 1 mm straight tube as Experiments 01–02 (r = 0.5 mm, L = 10 mm).
 
-**Waveform:** Mikheev et al. (2020) [2] SFA waveform scaled to 1 mm via Murray's law.
+**Waveform:** Mikheev et al. (2020) [2](#ref-2) SFA waveform scaled to 1 mm via Murray's law.
 Includes flow reversal (AU ≈ 12). See [Derivation of Q(t)](#derivation-of-qt-for-a-1-mm-artery).
 
 **Boundary conditions:**
@@ -493,7 +395,7 @@ Includes flow reversal (AU ≈ 12). See [Derivation of Q(t)](#derivation-of-qt-f
 | Wall | `noSlip` | `zeroGradient` |
 
 **Key parameters:**
-- Q_mean = 16.6 μl/s, Q_peak = 199 μl/s, Q_min = −53 μl/s (reversal), Re_mean = 6.4, Re_peak = 77
+- Q_mean = 0.0166 mL/s, Q_peak = 0.199 mL/s, Q_min = −0.053 mL/s (reversal), Re_mean = 6.4, Re_peak = 77
 - Run for 3 cardiac cycles (endTime = 2.571 s); discard first cycle as start-up transient; compute TAWSS, OSI, RRT from t = 0.857 s to 2.571 s
 
 **Run:**
@@ -545,7 +447,7 @@ is introduced in later experiments.
 | Wall | `noSlip` | `zeroGradient` |
 
 **Key parameters:**
-- Same inlet as Exp 02: Q_mean = 24 μl/s, Q_peak = 94 μl/s, Re_mean = 9.3, Re_peak = 36
+- Same inlet as Exp 02: Q_mean = 0.024 mL/s, Q_peak = 0.094 mL/s, Re_mean = 9.3, Re_peak = 36
 - Outlet mean velocity = inlet / 4 (continuity): U_mean_out = 0.76 cm/s, Re_out_peak = 9
 - Run for 3 cardiac cycles (endTime = 2.571 s); discard first cycle; compute TAWSS, OSI, RRT from t = 0.857 s to 2.571 s
 
@@ -775,28 +677,51 @@ pvpython assets/paraview/01_simple_laminar.py
 
 ## References
 
+
+<a id="ref-1"></a>
 [1] D. W. Holdsworth, C. J. D. Norley, R. Frayne, D. A. Steinman, and B. K. Rutt, “Characterization of common carotid artery blood-flow waveforms in normal human subjects,” *Physiological Measurement*, vol. 20, no. 2, pp. 219–240, 1999. https://doi.org/10.1088/0967-3334/20/2/301
 
+
+<a id="ref-2"></a>
 [2] N. I. Mikheev, V. M. Molochnikov, A. A. Paereliy, and O. A. Dushina, “Physical simulation of blood flow in a femoropopliteal artery graft,” *Journal of Physics: Conference Series*, vol. 1683, p. 022090, 2020. https://doi.org/10.1088/1742-6596/1683/2/022090
 
+
+<a id="ref-3"></a>
 [3] M. S. Olufsen, C. S. Peskin, W. Y. Kim, E. M. Pedersen, A. Nadim, and J. Larsen, “Numerical simulation and experimental validation of blood flow in arteries with structured-tree outflow conditions,” *Annals of Biomedical Engineering*, vol. 28, no. 11, pp. 1281–1299, 2000. https://doi.org/10.1114/1.1326031
 
+
+<a id="ref-4"></a>
 [4] P. Reymond, F. Merenda, F. Perren, D. Rüfenacht, and N. Stergiopulos, “Validation of a one-dimensional model of the systemic arterial tree,” *American Journal of Physiology — Heart and Circulatory Physiology*, vol. 297, no. 1, pp. H208–H222, 2009. https://doi.org/10.1152/ajpheart.00037.2009
 
-[5] J. R. Womersley, “Method for the calculation of velocity, rate of flow and viscous drag in arteries when the pressure gradient is known,” *Journal of Physiology*, vol. 127, pp. 553–563, 1955. https://doi.org/10.1113/jphysiol.1955.sp005276
 
-[6] D. N. Ku, D. P. Giddens, C. K. Zarins, and S. Glagov, “Pulsatile flow and atherosclerosis in the human carotid bifurcation: positive correlation between plaque location and low oscillating shear stress,” *Arteriosclerosis*, vol. 5, no. 3, pp. 293–302, 1985. https://doi.org/10.1161/01.ATV.5.3.293
 
-[7] H. A. Himburg, D. M. Grzybowski, A. L. Hazel, J. A. LaMack, X.-M. Li, and M. H. Friedman, “Spatial comparison between wall shear stress measures and porcine arterial endothelial permeability,” *American Journal of Physiology — Heart and Circulatory Physiology*, vol. 286, no. 5, pp. H1916–H1922, 2004. https://doi.org/10.1152/ajpheart.00897.2003
+<a id="ref-5"></a>
+[5] D. N. Ku, D. P. Giddens, C. K. Zarins, and S. Glagov, “Pulsatile flow and atherosclerosis in the human carotid bifurcation: positive correlation between plaque location and low oscillating shear stress,” *Arteriosclerosis*, vol. 5, no. 3, pp. 293–302, 1985. https://doi.org/10.1161/01.ATV.5.3.293
 
-[8] X. He and D. N. Ku, “Pulsatile flow in the human left coronary artery bifurcation: average conditions,” *Journal of Biomechanical Engineering*, vol. 118, no. 1, pp. 74–82, 1996. https://doi.org/10.1115/1.2795943
 
-[9] A. M. Malek, S. L. Alper, and S. Izumo, “Hemodynamic shear stress and its role in atherosclerosis,” *JAMA*, vol. 282, no. 21, pp. 2035–2042, 1999. https://doi.org/10.1001/jama.282.21.2035
+<a id="ref-6"></a>
+[6] H. A. Himburg, D. M. Grzybowski, A. L. Hazel, J. A. LaMack, X.-M. Li, and M. H. Friedman, “Spatial comparison between wall shear stress measures and porcine arterial endothelial permeability,” *American Journal of Physiology — Heart and Circulatory Physiology*, vol. 286, no. 5, pp. H1916–H1922, 2004. https://doi.org/10.1152/ajpheart.00897.2003
 
-[10] R. S. Keynton, M. M. Evancho, R. L. Sims, N. V. Rodway, A. Gobin, and S. E. Rittgers, “Intimal hyperplasia and wall shear stress in arterial bypass graft distal anastomoses: an in vivo model study,” *Journal of Biomechanical Engineering*, vol. 123, no. 5, pp. 464–473, 2001. https://doi.org/10.1115/1.1392318
 
-[11] S. Madhavan and E. M. C. Kemmerling, “The effect of inlet and outlet boundary conditions in image-based CFD modeling of aortic flow,” *BioMedical Engineering OnLine*, vol. 17, p. 66, 2018. https://doi.org/10.1186/s12938-018-0497-1
+<a id="ref-7"></a>
+[7] X. He and D. N. Ku, “Pulsatile flow in the human left coronary artery bifurcation: average conditions,” *Journal of Biomechanical Engineering*, vol. 118, no. 1, pp. 74–82, 1996. https://doi.org/10.1115/1.2795943
 
+
+<a id="ref-8"></a>
+[8] A. M. Malek, S. L. Alper, and S. Izumo, “Hemodynamic shear stress and its role in atherosclerosis,” *JAMA*, vol. 282, no. 21, pp. 2035–2042, 1999. https://doi.org/10.1001/jama.282.21.2035
+
+
+<a id="ref-9"></a>
+[9] R. S. Keynton, M. M. Evancho, R. L. Sims, N. V. Rodway, A. Gobin, and S. E. Rittgers, “Intimal hyperplasia and wall shear stress in arterial bypass graft distal anastomoses: an in vivo model study,” *Journal of Biomechanical Engineering*, vol. 123, no. 5, pp. 464–473, 2001. https://doi.org/10.1115/1.1392318
+
+
+<a id="ref-10"></a>
+[10] S. Madhavan and E. M. C. Kemmerling, “The effect of inlet and outlet boundary conditions in image-based CFD modeling of aortic flow,” *BioMedical Engineering OnLine*, vol. 17, p. 66, 2018. https://doi.org/10.1186/s12938-018-0497-1
+
+
+<a id="ref-12"></a>
 [12] M. C. F. Ford, O. Alperin, S. H. Lee, D. W. Holdsworth, and D. A. Steinman, “Characterization of volumetric flow rate waveforms in the normal internal carotid and vertebral arteries,” *Physiological Measurement*, vol. 26, no. 4, pp. 477–488, 2005.
 
+
+<a id="ref-13"></a>
 [13] OpenFOAM Foundation, *OpenFOAM User Guide — v2412*, https://www.openfoam.com/documentation/
