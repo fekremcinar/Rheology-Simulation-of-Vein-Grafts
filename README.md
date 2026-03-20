@@ -155,8 +155,8 @@ and Womersley inlet profiles vanish within 1.75 diameters of the inlet.
 **Option A — Biphasic (cerebral/carotid territory):**
 
 Source: Holdsworth et al. (1999) [1], common carotid artery (CCA), 17 subjects, 3560 cycles.
-- Reference: r_CCA = 3.15 mm, Q_mean = 6.0 ml/s, T = 0.917 s
-- Scaled: Q_mean(1mm) = 6.0 × (0.5/3.15)³ = **24 μl/s**, T = 0.857 s (70 bpm)
+- Reference: r_CCA = 3.15 mm, Q_mean = 6.0 mL/s, T = 0.917 s
+- Scaled: Q_mean(1mm) = 6.0 × (0.5/3.15)³ = **0.024 mL/s**, T = 0.857 s (70 bpm)
 - Waveform shape: biphasic — large systolic peak (Q_peak ≈ 3.93 × Q_mean), brief dicrotic
   notch dip at ~43% of cycle, diastolic decay. No flow reversal.
 
@@ -171,7 +171,7 @@ branches, *"flow is purely unidirectional."*
 **Option B — Triphasic (peripheral/femoral territory):**
 
 Source: Mikheev et al. (2020) [2], superficial femoral artery (SFA), physical simulation.
-- Reference: r_SFA = 2.5 mm, Q_mean = 2.07 ml/s, AU = U_max/U_mean ≈ 12
+- Reference: r_SFA = 2.5 mm, Q_mean = 2.07 mL/s, AU = U_max/U_mean ≈ 12
 - Scaled: Q_mean(1mm) = 2.07 × (0.5/2.5)³ = **16.6 μl/s**, T = 0.857 s (70 bpm)
 - Waveform shape: triphasic — high systolic peak (AU ≈ 12), flow reversal in early diastole
   (caused by wave reflections from the high-resistance resting muscle bed), then a small
