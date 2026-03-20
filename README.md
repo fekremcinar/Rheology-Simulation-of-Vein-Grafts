@@ -171,8 +171,8 @@ taper geometry is one of the most important design parameters of the graft:
 | **Sigmoid / S-curve** | Smooth curved transition | Lowest recirculation |
 | **Parabolic taper** | Parabolic wall profile | Low recirculation |
 
-From diffuser theory, separation begins when the **half-angle exceeds ~7°**. For r1 = 5 mm
-and r3 = 4 mm, the minimum graft length for a non-separating linear taper is ~8 mm.
+From diffuser theory, separation begins when the **half-angle exceeds ~7°**. For r1 = 0.5 mm
+and r3 = 0.4 mm, the minimum graft length for a non-separating linear taper is ~0.8 mm.
 Experiments 04–05 use a linear taper baseline; comparison with sigmoid transitions is a
 natural extension.
 
@@ -479,16 +479,17 @@ pimpleFoam
 
 **Solver:** `pimpleFoam` (transient)
 **Purpose:** Sweep graft radius r3 to find the optimal intermediate radius that minimises
-thrombosis risk for fixed r1 = 5 mm and r2 = 3 mm.
+thrombosis risk for fixed r1 = 0.5 mm (1 mm diameter) and r2 = 0.3 mm (0.6 mm diameter),
+where r1/r2 = 1.67 > 3/2 (graft required).
 
 **Parameter sweep:**
 
 | Sub-case | r3 (mm) | r1/r3 | r3/r2 |
 |----------|---------|-------|-------|
-| 05a | 3.2 | 1.56 | 1.07 |
-| 05b | 3.5 | 1.43 | 1.17 |
-| 05c | 4.0 | 1.25 | 1.33 |
-| 05d | 4.5 | 1.11 | 1.50 |
+| 05a | 0.32 | 1.56 | 1.07 |
+| 05b | 0.35 | 1.43 | 1.17 |
+| 05c | 0.40 | 1.25 | 1.33 |
+| 05d | 0.45 | 1.11 | 1.50 |
 
 **Graft Transition Geometry: Linear Taper Is Not the Only Option**
 All sub-cases use a linear taper with the same taper angle to isolate the effect of r3.
