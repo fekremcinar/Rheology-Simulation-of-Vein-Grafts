@@ -22,8 +22,8 @@ With venous graft  (r1 → r3 → r2, each step ratio < 3/2)
 
   ━━━━━━━━━━━━━━━━━━━━━━━━┓       ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓       ┏━━━━━━━━━━
                           ┃       ┃                             ┃       ┃
-     Donor (r1 = 5 mm)    ┃ ────► ┃     Venous graft (r3, L)    ┃ ────► ┃  Recipient
-                          ┃       ┃          (r3 = 4 mm)        ┃       ┃  (r2 = 3 mm)
+    Donor (r1 = 0.5 mm)   ┃ ────► ┃     Venous graft (r3, L)    ┃ ────► ┃  Recipient
+    (diameter = 1 mm)     ┃       ┃         (r3 = 0.4 mm)       ┃       ┃  (r2 = 0.3 mm)
   ━━━━━━━━━━━━━━━━━━━━━━━━┛       ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛       ┗━━━━━━━━━━
                               ↑                                     ↑
                            step 1                                step 2
