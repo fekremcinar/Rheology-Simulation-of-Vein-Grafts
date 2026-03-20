@@ -14,107 +14,101 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Experiment 01: Full 3D cylinder, 1 mm diameter baseline
-// Full 3D cylinder -- O-grid (butterfly) mesh
+// Full 3D cylinder — O-grid (butterfly) mesh
 //
-// The O-grid uses 5 hex blocks in the cross-section:
-//   - 1 square centre block
-//   - 4 outer blocks connecting the centre to the circular wall
-// Arc edges make the outer boundary a true cylinder.  This avoids the
-// degenerate axis of a wedge mesh and is reused in all subsequent experiments.
+// The O-grid uses 5 hex blocks in the cross-section: 1 square centre block
+// and 4 outer blocks connecting the centre to the circular wall. Arc edges
+// make the outer boundary truly circular. This avoids the degenerate axis
+// of a wedge and gives a high-quality mesh suitable for 3D visualisation
+// and as a base for all future experiments (heartbeat, FSI, junction, graft).
 //
 // Coordinate system:
-//   x : flow direction  (0 to L = 0.01 m)
-//   y : horizontal      (-r to +r)
-//   z : vertical        (-r to +r)
+//   x : flow direction  (0 → L = 0.01 m)
+//   y : horizontal      (-r → +r)
+//   z : vertical        (-r → +r)
 //
 // Key dimensions:
-//   r   = 0.0005   m   -- vessel radius (0.5 mm, 1 mm diameter)
-//   a   = 0.00025  m   -- inner square half-width  (= r/2 = 0.25 mm)
-//   rS  = 0.000354 m   -- wall-corner radius        (= r/sqrt(2) = 0.354 mm, sits on circle)
-//   L   = 0.01     m   -- vessel length (10 mm = 20*r, same L/r ratio as original)
+//   r   = 0.0005   m  — vessel radius (1 mm diameter)
+//   a   = 0.00025  m  — inner square half-width  (= r/2)
+//   rS  = 0.0003536 m — wall-corner radius       (= r/√2, sits on circle)
+//   L   = 0.01     m  — vessel length
 //
-// Mesh resolution (prioritise accuracy over speed):
+// Mesh resolution  (no performance concern — prioritise accuracy):
 //   Axial  (x) : 40 cells
-//   Core (y,z)  : 12 x 12 cells in centre block
-//   Radial      : 10 cells in each outer block, graded 4:1 toward the wall
-//                 (smallest cell approx 5e-5 m -> adequate for laminar WSS at low Re)
-//
-// High-resolution version (Experiment 07): double axial (80), finer radial (16),
-// grading 0.1, L=0.2 m --- use that mesh for final metric validation only.
+//   Core   (y,z): 12 × 12 cells in centre block
+//   Radial : 10 cells in each outer block, graded 4:1 toward the wall
 
 scale 1;
 
 vertices
 (
-    // -- Inlet plane  x = 0 --------------------------------------------------
-    // Inner square corners (at r/2 = 0.00025 m from axis)
-    ( 0      0.00025  -0.00025 )  //  0  inner  +y -z
-    ( 0      0.00025   0.00025 )  //  1  inner  +y +z
-    ( 0     -0.00025   0.00025 )  //  2  inner  -y +z
-    ( 0     -0.00025  -0.00025 )  //  3  inner  -y -z
-    // Wall corners (on the circle at 45 deg intervals, rS = r/sqrt(2) = 0.000354 m)
-    ( 0      0.000354 -0.000354)  //  4  wall  315 deg  (+y -z)
-    ( 0      0.000354  0.000354)  //  5  wall   45 deg  (+y +z)
-    ( 0     -0.000354  0.000354)  //  6  wall  135 deg  (-y +z)
-    ( 0     -0.000354 -0.000354)  //  7  wall  225 deg  (-y -z)
-
-    // -- Outlet plane  x = L -------------------------------------------------
+    // ── Inlet plane  x = 0 ──────────────────────────────────────────────
     // Inner square corners
-    ( 0.01   0.00025  -0.00025 )  //  8  inner  +y -z
-    ( 0.01   0.00025   0.00025 )  //  9  inner  +y +z
-    ( 0.01  -0.00025   0.00025 )  // 10  inner  -y +z
-    ( 0.01  -0.00025  -0.00025 )  // 11  inner  -y -z
+    ( 0       0.00025  -0.00025  )  //  0  inner  +y −z
+    ( 0       0.00025   0.00025  )  //  1  inner  +y +z
+    ( 0      -0.00025   0.00025  )  //  2  inner  −y +z
+    ( 0      -0.00025  -0.00025  )  //  3  inner  −y −z
+    // Wall corners (on the circle, at 45° intervals)
+    ( 0       0.0003536 -0.0003536)  //  4  wall  315°  (+y −z)
+    ( 0       0.0003536  0.0003536)  //  5  wall   45°  (+y +z)
+    ( 0      -0.0003536  0.0003536)  //  6  wall  135°  (−y +z)
+    ( 0      -0.0003536 -0.0003536)  //  7  wall  225°  (−y −z)
+
+    // ── Outlet plane  x = L ─────────────────────────────────────────────
+    // Inner square corners
+    ( 0.01    0.00025  -0.00025  )  //  8  inner  +y −z
+    ( 0.01    0.00025   0.00025  )  //  9  inner  +y +z
+    ( 0.01   -0.00025   0.00025  )  // 10  inner  −y +z
+    ( 0.01   -0.00025  -0.00025  )  // 11  inner  −y −z
     // Wall corners
-    ( 0.01   0.000354 -0.000354)  // 12  wall  315 deg
-    ( 0.01   0.000354  0.000354)  // 13  wall   45 deg
-    ( 0.01  -0.000354  0.000354)  // 14  wall  135 deg
-    ( 0.01  -0.000354 -0.000354)  // 15  wall  225 deg
+    ( 0.01    0.0003536 -0.0003536)  // 12  wall  315°
+    ( 0.01    0.0003536  0.0003536)  // 13  wall   45°
+    ( 0.01   -0.0003536  0.0003536)  // 14  wall  135°
+    ( 0.01   -0.0003536 -0.0003536)  // 15  wall  225°
 );
 
-// Cross-section topology (looking from -x toward +x):
+// Cross-section topology (looking from −x toward +x):
 //
-//       6 --- 5
+//       6 ─── 5
 //      / \   / \
-//     7   2-1   4
-//     |   |C|   |
-//     7   3-0   4
+//     7   2─1   4
+//     |   │C│   |
+//     7   3─0   4
 //      \ /   \ /
-//       7 --- 4
+//       7 ─── 4
 //
-// C = centre block (hex  3  0  1  2 / 11  8  9 10)
-// R = right  block (hex  0  4  5  1 /  8 12 13  9)
-// T = top    block (hex  1  5  6  2 /  9 13 14 10)
-// L = left   block (hex  2  6  7  3 / 10 14 15 11)
-// B = bottom block (hex  3  7  4  0 / 11 15 12  8)
+// C = centre block  (hex  3  0  1  2 / 11  8  9 10)
+// R = right  block  (hex  0  4  5  1 /  8 12 13  9)
+// T = top    block  (hex  1  5  6  2 /  9 13 14 10)
+// L = left   block  (hex  2  6  7  3 / 10 14 15 11)
+// B = bottom block  (hex  3  7  4  0 / 11 15 12  8)
 
 blocks
 (
-    // Centre -- uniform cells, no grading
+    // Centre — uniform cells
     hex ( 3  0  1  2 11  8  9 10) (12 12 40) simpleGrading (1    1 1)
 
-    // Outer blocks -- radial grading 4:1 toward the wall (i-direction = 0.25)
+    // Outer blocks — radial grading 4:1 toward the wall (i-direction)
     hex ( 0  4  5  1  8 12 13  9) (10 12 40) simpleGrading (0.25 1 1)  // right
     hex ( 1  5  6  2  9 13 14 10) (10 12 40) simpleGrading (0.25 1 1)  // top
     hex ( 2  6  7  3 10 14 15 11) (10 12 40) simpleGrading (0.25 1 1)  // left
     hex ( 3  7  4  0 11 15 12  8) (10 12 40) simpleGrading (0.25 1 1)  // bottom
 );
 
-// Circular arc edges -- enforce a true cylindrical wall
-// Each arc is defined by two endpoints and a midpoint on the circle
+// Circular arc edges — make the outer boundary a true cylinder
 edges
 (
-    // Inlet arcs (x = 0): midpoint at r = 0.0005 m on the circle
-    arc  4  5 ( 0     0.0005  0     )  // 315 to  45 deg  midpoint at   0 deg (right)
-    arc  5  6 ( 0     0       0.0005)  //  45 to 135 deg  midpoint at  90 deg (top)
-    arc  6  7 ( 0    -0.0005  0     )  // 135 to 225 deg  midpoint at 180 deg (left)
-    arc  7  4 ( 0     0      -0.0005)  // 225 to 315 deg  midpoint at 270 deg (bottom)
+    // Inlet arcs (x = 0): each arc passes through the circle midpoint
+    arc  4  5 ( 0      0.0005  0      )  // 315° → 45°   midpoint at   0° (right)
+    arc  5  6 ( 0      0       0.0005 )  // 45°  → 135°  midpoint at  90° (top)
+    arc  6  7 ( 0     -0.0005  0      )  // 135° → 225°  midpoint at 180° (left)
+    arc  7  4 ( 0      0      -0.0005 )  // 225° → 315°  midpoint at 270° (bottom)
 
-    // Outlet arcs (x = L = 0.01 m)
-    arc 12 13 ( 0.01  0.0005  0     )
-    arc 13 14 ( 0.01  0       0.0005)
-    arc 14 15 ( 0.01 -0.0005  0     )
-    arc 15 12 ( 0.01  0      -0.0005)
+    // Outlet arcs (x = L)
+    arc 12 13 ( 0.01   0.0005  0      )
+    arc 13 14 ( 0.01   0       0.0005 )
+    arc 14 15 ( 0.01  -0.0005  0      )
+    arc 15 12 ( 0.01   0      -0.0005 )
 );
 
 boundary

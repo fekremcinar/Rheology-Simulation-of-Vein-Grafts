@@ -1,33 +1,26 @@
 #!/usr/bin/env pvpython
 """
-ParaView visualization -- Experiment 03: Heartbeat Laminar Flow
-===============================================================
+ParaView visualization -- Experiment 03: Triphasic Heartbeat Laminar Flow
+==========================================================================
 Five-panel layout:
   - Left 60 %  : 3-D render at peak systole
   - Right 40 % : 2x2 grid
       top-left     Outlet U_X profile  (bars only)
       top-right    Q(t) volumetric flow rate  [mL/s]
       bottom-left  Inlet U_X profile   (bars + live parabola fit)
-      bottom-right Inlet/outlet pressure p(t) [mmHg]
+      bottom-right Hemodynamic metrics (dP, WSS, Re, RRT normalised by H-P)
 
-Q(t) and p(t) are read from OpenFOAM postProcessing files written by the
-functionObjects block in system/controlDict (flowRateInlet, flowRateOutlet,
-pressureProbes).  The simulation MUST be run with those functionObjects
+Q(t) and hemodynamic data are read from OpenFOAM postProcessing files written
+by the functionObjects block in system/controlDict (flowRateInlet, flowRateOutlet,
+pAvgInlet, pAvgOutlet).  The simulation MUST be run with those functionObjects
 enabled -- see controlDict.  If the postProcessing folder is absent the
-script still runs but those two charts will be skipped.
-
-Pressure reconstruction (Hagen-Poiseuille linear extrapolation):
-  Probe 0 at x = 0.025 m (x/L = 0.25)  ->  p0_kin [m2/s2]
-  Probe 1 at x = 0.075 m (x/L = 0.75)  ->  p1_kin [m2/s2]
-  p_inlet  =  1.5 * p0 - 0.5 * p1  (extrapolate to x = 0)
-  p_outlet = -0.5 * p0 + 1.5 * p1  (extrapolate to x = L)
-  Convert kinematic -> mmHg: p_mmHg = p_kin * rho / 133.322  (~= p_kin * 7.9506)
+script still runs but those charts will be skipped.
 
 How to run
 ----------
 Option A -- pvpython:
     pvpython .../assets/paraview/03_triphasic_heartbeat.py \\
-        --case .../run/03_triphasic_heartbeat --radius 0.005
+        --case .../run/03_triphasic_heartbeat --radius 0.0005
 Option B -- ParaView Python Shell: open & Run Script.
 Option C -- ParaView Macro: Tools -> Macros -> Add new macro.
 """
@@ -48,16 +41,28 @@ T_PERIOD = 0.857    # cardiac period [s]  (70 bpm)
 PHI_PEAK = 0.175    # fraction of period at peak systole
 
 RHO        = 1060.0
-PA_TO_MMHG = 1.0 / 133.322
-P_FACTOR   = RHO * PA_TO_MMHG   # p_kin [m2/s2] -> mmHg  (~= 7.9506)
+MU         = 0.0035          # dynamic viscosity [Pa·s]
+NU         = MU / RHO        # kinematic viscosity [m²/s]
 
-# HP extrapolation coefficients for probes at x=0.025, x=0.075, L=0.1
-# p_inlet  = C0_IN  * p0 + C1_IN  * p1
-# p_outlet = C0_OUT * p0 + C1_OUT * p1
-C0_IN  =  1.5;  C1_IN  = -0.5
-C0_OUT = -0.5;  C1_OUT =  1.5
+A_INLET    = math.pi * RADIUS**2
 
-M3_TO_ML = 1e6   # m3/s -> mL/s
+# Mean flow parameters (triphasic waveform, Murray scaling to 1 mm artery)
+Q_MEAN     = 1.656e-8        # [m³/s]
+U_MEAN     = Q_MEAN / A_INLET
+
+# Triphasic waveform peak/reversal extremes (Q_norm_peak=12, Q_norm_min=-3.2)
+# U_center = 2 * Q_norm * U_MEAN  (parabolic profile)
+U_CENTER_PEAK = 2.0 * 12.0  * U_MEAN   # ≈ +0.506 m/s (forward peak)
+U_CENTER_MIN  = 2.0 * (-3.2) * U_MEAN  # ≈ -0.135 m/s (reversal)
+
+# Hagen-Poiseuille reference values (Poiseuille at Q_mean)
+L_TUBE     = 0.01            # vessel length [m]
+DP_HP_PA   = 8.0 * MU * Q_MEAN * L_TUBE / (math.pi * RADIUS**4)   # [Pa]
+WSS_HP     = 4.0 * MU * Q_MEAN / (math.pi * RADIUS**3)            # [Pa]
+RE_THEORY  = U_MEAN * (2.0 * RADIUS) / NU
+RRT_HP     = 1.0 / WSS_HP                                          # [Pa^-1]
+
+M3_TO_ML   = 1e6   # m³/s -> mL/s
 
 # -- CLI args (pvpython only) -------------------------------------------------
 if _IS_PVPYTHON:
@@ -104,7 +109,7 @@ UpdatePipeline()
 b     = reader.GetDataInformation().GetBounds()
 x_min = b[0];  x_max = b[1];  L_vessel = x_max - x_min
 
-x_inlet  = x_min + 0.001
+x_inlet  = x_min
 x_outlet = x_min + 0.9 * L_vessel
 
 # -- Peak-systole time --------------------------------------------------------
@@ -242,18 +247,18 @@ def _style_multi(disp, styles):
         print("    _style_multi: {}".format(ex))
 
 
-def _profile_view(title, y_min, y_max):
+def _profile_view(title, y_min, y_max, x_max=1.0):
     """XYChartView for a U_X radial profile."""
     v = CreateView('XYChartView')
     v.ChartTitle               = title
     v.BottomAxisTitle          = 'y  [mm]'
-    v.LeftAxisTitle            = 'U_X  [m/s]'
+    v.LeftAxisTitle            = 'U_X  [cm/s]'
     v.LeftAxisUseCustomRange   = 1
     v.LeftAxisRangeMinimum     = y_min
     v.LeftAxisRangeMaximum     = y_max
     v.BottomAxisUseCustomRange = 1
     v.BottomAxisRangeMinimum   = 0.0
-    v.BottomAxisRangeMaximum   = RADIUS * 2 * 1000
+    v.BottomAxisRangeMaximum   = x_max
     return v
 
 
@@ -285,7 +290,6 @@ clip.ClipType.Origin = [0, 0, 0]
 UpdatePipeline()
 clipDisp = Show(clip, renderView)
 ColorBy(clipDisp, ('CELLS', 'U', 'X'))
-clipDisp.RescaleTransferFunctionToDataRange(True)
 clipDisp.SetScalarBarVisibility(renderView, True)
 clipDisp.Opacity = 0.5
 
@@ -295,7 +299,6 @@ sl.SliceType.Origin = [0, 0, 0]
 UpdatePipeline()
 slDisp = Show(sl, renderView)
 ColorBy(slDisp, ('CELLS', 'U', 'X'))
-slDisp.RescaleTransferFunctionToDataRange(True)
 
 st = StreamTracer(Input=reader, SeedType='Line')
 st.Vectors                 = ['CELLS', 'U']
@@ -306,7 +309,6 @@ st.SeedType.Resolution     = 20
 UpdatePipeline()
 stDisp = Show(st, renderView)
 ColorBy(stDisp, ('POINTS', 'U', 'Magnitude'))
-stDisp.RescaleTransferFunctionToDataRange(True)
 
 gl = Glyph(Input=sl, GlyphType='Arrow')
 gl.OrientationArray = ['CELLS', 'U']
@@ -317,6 +319,15 @@ gl.Stride            = 2
 UpdatePipeline()
 glDisp = Show(gl, renderView)
 ColorBy(glDisp, ('POINTS', 'U', 'Magnitude'))
+
+# Fix colormap range to cover the full pulsatile velocity range so the
+# render doesn't saturate at the low-velocity state (RescaleToDataRange
+# only captures the current timestep which may not be t_peak).
+# Triphasic waveform: includes flow reversal → min is negative.
+lut = GetColorTransferFunction('U')
+lut.RescaleTransferFunction(U_CENTER_MIN, U_CENTER_PEAK)
+pwf = GetOpacityTransferFunction('U')
+pwf.RescaleTransferFunction(U_CENTER_MIN, U_CENTER_PEAK)
 
 # =============================================================================
 # CHART A -- Outlet U_X profile  (top-left of 2x2, bars only)
@@ -335,15 +346,56 @@ calc_out.ResultArrayName = 'arc_length_mm'
 calc_out.Function        = 'arc_length * 1000'
 UpdatePipeline()
 
+calc_out_cms = Calculator(Input=calc_out)
+calc_out_cms.AttributeType   = 'Point Data'
+calc_out_cms.ResultArrayName = 'U_X_cms'
+calc_out_cms.Function        = 'U_X * 100'
+UpdatePipeline()
+
 outletChart = _profile_view(
     'Outlet  x = {} mm'.format(x_out_mm),
-    y_min=-0.2, y_max=1.0
+    y_min=-16, y_max=54, x_max=1.0
 )
-d_out = Show(calc_out, outletChart)
+d_out = Show(calc_out_cms, outletChart)
 d_out.UseIndexForXAxis = 0
 d_out.XArrayName       = 'arc_length_mm'
-d_out.SeriesVisibility = ['U_X']
-_style(d_out, 'U_X', 'U_X outlet  [m/s]', [0.80, 0.15, 0.15], 'bar')
+d_out.SeriesVisibility = ['U_X_cms']
+_style(d_out, 'U_X_cms', 'U_X outlet  [cm/s]', [0.80, 0.15, 0.15], 'bar')
+
+# Parabola fit on outlet — values in cm/s
+fit_out = ProgrammableFilter(Input=pol_out)
+fit_out.OutputDataSetType = 'vtkTable'
+fit_out.Script = (
+    "import vtk, numpy as np\n"
+    "inp = self.GetInputDataObject(0, 0)\n"
+    "out = self.GetOutput()\n"
+    "ya = vtk.vtkFloatArray(); ya.SetName('arc_length_mm')\n"
+    "ua = vtk.vtkFloatArray(); ua.SetName('U_X_cms')\n"
+    "n = inp.GetNumberOfPoints()\n"
+    "if n >= 3:\n"
+    "    al = inp.GetPointData().GetArray('arc_length')\n"
+    "    uv = inp.GetPointData().GetArray('U')\n"
+    "    if al and uv:\n"
+    "        y_arr  = np.array([al.GetValue(i)*1000 for i in range(n)])\n"
+    "        ux_arr = np.array([uv.GetTuple3(i)[0]*100 for i in range(n)])\n"
+    "        try:\n"
+    "            c = np.polyfit(y_arr, ux_arr, 2)\n"
+    "            y_fit  = np.linspace(y_arr.min(), y_arr.max(), 500)\n"
+    "            ux_fit = np.polyval(c, y_fit)\n"
+    "        except Exception:\n"
+    "            y_fit, ux_fit = y_arr, ux_arr\n"
+    "        for yv, fv in zip(y_fit, ux_fit):\n"
+    "            ya.InsertNextValue(float(yv))\n"
+    "            ua.InsertNextValue(float(fv))\n"
+    "out.AddColumn(ya)\n"
+    "out.AddColumn(ua)\n"
+)
+UpdatePipeline()
+d_out_fit = Show(fit_out, outletChart)
+d_out_fit.UseIndexForXAxis = 0
+d_out_fit.XArrayName       = 'arc_length_mm'
+d_out_fit.SeriesVisibility = ['U_X_cms']
+_style(d_out_fit, 'U_X_cms', 'Fitted parabola (live)', [0.122, 0.467, 0.706], 'line')
 
 # =============================================================================
 # CHART B -- Q(t) volumetric flow rate  (top-right of 2x2)
@@ -363,8 +415,8 @@ try:
     q_in  = [-r[1] * M3_TO_ML for r in in_rows]
     q_out = [ r[1] * M3_TO_ML for r in out_rows]
 
-    q_hi = max(max(q_in), max(q_out)) * 1.10
-    q_lo = min(0.0, min(min(q_in), min(q_out)) * 0.95)
+    q_hi = max(max(q_in), max(q_out)) * 1.15
+    q_lo = min(0.0, min(min(q_in), min(q_out))) * 1.15
 
     tbl_q = _make_table_source([
         ('time',     times),
@@ -416,6 +468,12 @@ calc_in.ResultArrayName = 'arc_length_mm'
 calc_in.Function        = 'arc_length * 1000'
 UpdatePipeline()
 
+calc_in_cms = Calculator(Input=calc_in)
+calc_in_cms.AttributeType   = 'Point Data'
+calc_in_cms.ResultArrayName = 'U_X_cms'
+calc_in_cms.Function        = 'U_X * 100'
+UpdatePipeline()
+
 fit_in = ProgrammableFilter(Input=pol_in)
 fit_in.OutputDataSetType = 'vtkTable'
 fit_in.Script = (
@@ -423,14 +481,14 @@ fit_in.Script = (
     "inp = self.GetInputDataObject(0, 0)\n"
     "out = self.GetOutput()\n"
     "ya = vtk.vtkFloatArray(); ya.SetName('arc_length_mm')\n"
-    "ua = vtk.vtkFloatArray(); ua.SetName('U_X')\n"
+    "ua = vtk.vtkFloatArray(); ua.SetName('U_X_cms')\n"
     "n = inp.GetNumberOfPoints()\n"
     "if n >= 3:\n"
     "    al = inp.GetPointData().GetArray('arc_length')\n"
     "    uv = inp.GetPointData().GetArray('U')\n"
     "    if al and uv:\n"
     "        y_arr  = np.array([al.GetValue(i)*1000 for i in range(n)])\n"
-    "        ux_arr = np.array([uv.GetTuple3(i)[0]  for i in range(n)])\n"
+    "        ux_arr = np.array([uv.GetTuple3(i)[0]*100  for i in range(n)])\n"
     "        try:\n"
     "            c = np.polyfit(y_arr, ux_arr, 2)\n"
     "            y_fit  = np.linspace(y_arr.min(), y_arr.max(), 500)\n"
@@ -446,75 +504,150 @@ fit_in.Script = (
 UpdatePipeline()
 
 inletChart = _profile_view(
-    'Inlet  x = {} mm  (fit updates on play)'.format(x_in_mm),
-    y_min=0.0, y_max=1.2
+    'Inlet  x = {} mm'.format(x_in_mm),
+    y_min=-16, y_max=54, x_max=1.0
 )
-d_in_bar = Show(calc_in, inletChart)
+d_in_bar = Show(calc_in_cms, inletChart)
 d_in_bar.UseIndexForXAxis = 0
 d_in_bar.XArrayName       = 'arc_length_mm'
-d_in_bar.SeriesVisibility = ['U_X']
-_style(d_in_bar, 'U_X', 'Sampled (500 pts)', [0.80, 0.15, 0.15], 'bar')
+d_in_bar.SeriesVisibility = ['U_X_cms']
+_style(d_in_bar, 'U_X_cms', 'Sampled (500 pts)', [0.80, 0.15, 0.15], 'bar')
 
 d_in_fit = Show(fit_in, inletChart)
 d_in_fit.UseIndexForXAxis = 0
 d_in_fit.XArrayName       = 'arc_length_mm'
-d_in_fit.SeriesVisibility = ['U_X']
-_style(d_in_fit, 'U_X', 'Fitted parabola (live)', [0.122, 0.467, 0.706], 'line')
+d_in_fit.SeriesVisibility = ['U_X_cms']
+_style(d_in_fit, 'U_X_cms', 'Fitted parabola (live)', [0.122, 0.467, 0.706], 'line')
 
 # =============================================================================
-# CHART D -- Inlet/outlet pressure p(t) [mmHg]  (bottom-right of 2x2)
-# Reads postProcessing/pressureProbes/.../p
-# HP extrapolation: p_inlet = 1.5*p0 - 0.5*p1,  p_outlet = -0.5*p0 + 1.5*p1
+# CHART D -- Hemodynamic Metrics  (bottom-right)
+#
+# Reads pAvgInlet/pAvgOutlet and flowRateInlet from postProcessing.
+# Computes per time step:
+#   dP(t)     = (pAvgInlet - pAvgOutlet) * rho          [Pa]
+#   WSS_HP(t) = 4 * mu * Q(t) / (pi * r^3)              [Pa]
+#   Re(t)     = Q(t) / A / (2r) / nu                    [-]
+#   RRT(t)    = 1 / WSS_HP(t)                           [Pa^-1]  (OSI=0 steady)
+#
+# All metrics are normalised by their Hagen-Poiseuille reference value.
+# A healthy fully-developed Poiseuille flow gives ratio = 1.0 for all metrics.
+#
+# Thrombosis thresholds (not normalised):
+#   TAWSS < 0.4 Pa  -> thrombogenic wall region
+#   RRT   > 20 Pa^-1 -> high platelet retention risk
 # =============================================================================
-pressChart = None
-
+hemoChart = None
 try:
-    p_file = _find_dat(os.path.join(POST, 'pressureProbes'), 'p')
-    p_rows = _read_dat(p_file)
+    in_file = _find_dat(os.path.join(POST, 'flowRateInlet'), 'surfaceFieldValue.dat')
+    pi_file = _find_dat(os.path.join(POST, 'pAvgInlet'),     'surfaceFieldValue.dat')
+    po_file = _find_dat(os.path.join(POST, 'pAvgOutlet'),    'surfaceFieldValue.dat')
 
-    ts_p   = [r[0] for r in p_rows]
-    p0_raw = [r[1] for r in p_rows]   # probe 0 at x = 0.025 m
-    p1_raw = [r[2] for r in p_rows]   # probe 1 at x = 0.075 m
+    q_rows  = _read_dat(in_file)
+    pi_rows = _read_dat(pi_file)
+    po_rows = _read_dat(po_file)
 
-    # HP linear extrapolation, then kinematic -> mmHg
-    p_in_mmhg  = [(C0_IN  * p0 + C1_IN  * p1) * P_FACTOR for p0, p1 in zip(p0_raw, p1_raw)]
-    p_out_mmhg = [(C0_OUT * p0 + C1_OUT * p1) * P_FACTOR for p0, p1 in zip(p0_raw, p1_raw)]
+    times_h = [r[0] for r in q_rows]
 
-    p_hi = max(max(p_in_mmhg), max(p_out_mmhg)) * 1.10
-    p_hi = max(p_hi, 0.1)   # at least 0.1 mmHg on axis
+    # Q(t): inlet phi < 0 during forward flow (inward face normal) -> negate.
+    # During triphasic reversal phi > 0 (outflow) -> q_vals < 0.
+    q_vals = [-r[1] for r in q_rows]   # [m^3/s]
 
-    tbl_p = _make_table_source([
-        ('time',         ts_p),
-        ('p_inlet_mmHg',  p_in_mmhg),
-        ('p_outlet_mmHg', p_out_mmhg),
+    # dP(t): kinematic -> physical [Pa]
+    dp_vals = [(pi[1] - po[1]) * RHO for pi, po in zip(pi_rows, po_rows)]
+
+    # WSS_HP(t): from Q using Hagen-Poiseuille relation tau_w = 4*mu*Q/(pi*r^3)
+    wss_vals = [4.0 * MU * q / (math.pi * RADIUS**3) for q in q_vals]
+
+    # Re(t) = U_mean * D / nu = Q / A * 2r / nu
+    re_vals = [q / A_INLET * (2.0 * RADIUS) / NU for q in q_vals]
+
+    # RRT(t) = 1 / WSS.
+    # Guard: during triphasic flow reversal Q crosses zero → WSS → 0 → RRT → ∞.
+    # Use a threshold of 1% of HP reference WSS to avoid division-by-near-zero spikes.
+    rrt_vals = [1.0 / w if abs(w) > WSS_HP * 0.01 else 0.0 for w in wss_vals]
+
+    # Normalise each series by its H-P reference value
+    def _safe_div(a, b):
+        return a / b if abs(b) > 1e-15 else 0.0
+
+    dp_norm  = [_safe_div(v, DP_HP_PA)  for v in dp_vals]
+    wss_norm = [_safe_div(v, WSS_HP)    for v in wss_vals]
+    re_norm  = [_safe_div(v, RE_THEORY) for v in re_vals]
+    rrt_norm = [_safe_div(v, RRT_HP)    for v in rrt_vals]
+    ones     = [1.0] * len(times_h)
+
+    # Clip all normalised values to avoid residual spikes at zero-crossings
+    # dominating the y-axis scale. Physiological range for a healthy tube is
+    # [-2, 15] (peak normalised Re ≈ Q_norm_peak = 12 for triphasic waveform).
+    CLIP = 15.0
+    dp_norm  = [max(-CLIP, min(CLIP, v)) for v in dp_norm]
+    wss_norm = [max(-CLIP, min(CLIP, v)) for v in wss_norm]
+    re_norm  = [max(-CLIP, min(CLIP, v)) for v in re_norm]
+    rrt_norm = [max(-CLIP, min(CLIP, v)) for v in rrt_norm]
+
+    tbl_h = _make_table_source([
+        ('time',         times_h),
+        ('dP_norm',      dp_norm),
+        ('WSS_norm',     wss_norm),
+        ('Re_norm',      re_norm),
+        ('RRT_norm',     rrt_norm),
+        ('HP_reference', ones),
     ])
 
-    pressChart = _time_view('Pressure  p(t)', 'p  [mmHg]', y_min=0.0, y_max=p_hi)
+    all_norm = dp_norm + wss_norm + re_norm + rrt_norm
+    # Use only the last 30 % of time steps to set the y-axis range so the
+    # startup transient does not dominate (data is already clipped).
+    tail_start = max(1, int(len(times_h) * 0.70))
+    tail_vals  = (dp_norm[tail_start:] + wss_norm[tail_start:] +
+                  re_norm[tail_start:] + rrt_norm[tail_start:])
+    if not tail_vals:
+        tail_vals = all_norm if all_norm else [1.0]
+    y_lo = min(0.0, min(tail_vals) * 1.1)
+    y_hi = max(max(tail_vals) * 1.3, 1.5)
 
-    d_p = Show(tbl_p, pressChart)
-    d_p.UseIndexForXAxis = 0
-    d_p.XArrayName       = 'time'
-    _style_multi(d_p, [
-        {'name': 'p_inlet_mmHg',  'color': (0.122, 0.467, 0.706), 'label': 'p inlet  [mmHg]'},
-        {'name': 'p_outlet_mmHg', 'color': (0.839, 0.153, 0.157), 'label': 'p outlet [mmHg]'},
+    hemoChart = _time_view('Hemodynamic Metrics', 'metric / HP value  [-]', y_min=y_lo, y_max=y_hi)
+
+    d_h = Show(tbl_h, hemoChart)
+    d_h.UseIndexForXAxis = 0
+    d_h.XArrayName       = 'time'
+    _style_multi(d_h, [
+        {'name': 'dP_norm',
+         'color': (0.122, 0.467, 0.706), 'thickness': 2,
+         'label': 'dP / dP_HP  ({:.1f} Pa)'.format(DP_HP_PA)},
+        {'name': 'WSS_norm',
+         'color': (0.839, 0.153, 0.157), 'thickness': 2,
+         'label': 'TAWSS / TAWSS_HP  ({:.3f} Pa)'.format(WSS_HP)},
+        {'name': 'Re_norm',
+         'color': (0.549, 0.337, 0.294), 'thickness': 2,
+         'label': 'Re / Re_HP  ({:.0f})'.format(RE_THEORY)},
+        {'name': 'RRT_norm',
+         'color': (0.498, 0.498, 0.498), 'thickness': 2,
+         'label': 'RRT / RRT_HP  ({:.1f} Pa^-1)'.format(RRT_HP)},
+        {'name': 'HP_reference',
+         'color': (0.18, 0.62, 0.17), 'thickness': 1, 'line': 2,
+         'label': 'H-P reference (= 1.0)'},
     ])
 
-    # Animated vertical time-cursor (green)
-    cur_p = _make_time_cursor(ts_p[0], ts_p[-1], 0.0, p_hi)
-    d_cp  = Show(cur_p, pressChart)
-    d_cp.UseIndexForXAxis = 0
-    d_cp.XArrayName       = 'time'
-    _style_multi(d_cp, [
-        {'name': 't_cursor', 'color': (0.18, 0.62, 0.17), 'thickness': 2, 'label': 'time'},
+    cur_h = _make_time_cursor(times_h[0], times_h[-1], y_lo, y_hi,
+                              series_name='t_cursor_h')
+    d_ch  = Show(cur_h, hemoChart)
+    d_ch.UseIndexForXAxis = 0
+    d_ch.XArrayName       = 'time'
+    _style_multi(d_ch, [
+        {'name': 't_cursor_h', 'color': (0.18, 0.62, 0.17), 'thickness': 2, 'label': 'current time'},
     ])
 
-    print("[02]   p(t) chart built ({} time steps)".format(len(ts_p)))
+    print("[03]   Hemodynamic metrics chart built ({} time steps)".format(len(times_h)))
+    print("[03]   H-P refs: dP={:.2f} Pa, WSS={:.4f} Pa, Re={:.0f}, RRT={:.2f} Pa^-1".format(
+        DP_HP_PA, WSS_HP, RE_THEORY, RRT_HP))
 
 except Exception as err:
-    print("[02]   p(t) chart SKIPPED: {}".format(err))
+    print("[03]   Hemodynamic metrics chart SKIPPED: {}".format(err))
     print("       -> Run simulation with functionObjects in controlDict first.")
-    pressChart = _time_view('p(t) -- run sim with functionObjects', 'p  [mmHg]',
-                            y_min=0.0, y_max=2.0)
+    hemoChart = _time_view(
+        'Hemodynamic Metrics -- run sim with functionObjects',
+        'metric / HP value  [-]', y_min=0.0, y_max=2.0
+    )
 
 # =============================================================================
 # LAYOUT  --  2x2 grid on the right
@@ -534,19 +667,19 @@ layout.AssignView(1,  renderView)
 layout.AssignView(11, outletChart)
 layout.AssignView(12, qChart)
 layout.AssignView(13, inletChart)
-layout.AssignView(14, pressChart)
+layout.AssignView(14, hemoChart)
 
 # -- Final render -------------------------------------------------------------
 SetActiveView(renderView)
 renderView.ResetCamera()
 Render()
 
-print("\n[02] Done -- " + CASE_NAME)
+print("\n[03] Done -- " + CASE_NAME)
 print("  t_peak    = {:.3f} s  (peak systole of last cycle)".format(t_peak))
-print("  Chart A   : Outlet U_X  (top-left)  -- red bars, y in [-0.2, 1.0]")
+print("  Chart A   : Outlet U_X  (top-left)  -- red bars, y in [-16, 54] cm/s")
 print("  Chart B   : Q(t)        (top-right) -- inlet teal, outlet orange, green cursor")
 print("  Chart C   : Inlet U_X   (bot-left)  -- red bars + live parabola fit")
-print("  Chart D   : p(t) mmHg   (bot-right) -- inlet blue, outlet red, green cursor\n")
+print("  Chart D   : Hemodynamics (bot-right) -- dP, WSS, Re, RRT normalised by H-P\n")
 
 if _IS_PVPYTHON:
     Interact()

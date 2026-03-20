@@ -9,40 +9,35 @@ FoamFile
 {
     version     2.0;
     format      ascii;
-    class       dictionary;
-    object      fvSchemes;
+    class       volVectorField;
+    object      U;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-ddtSchemes
-{
-    default         Euler;          // First-order implicit time integration
-}
+// Uniform inlet velocity: U = 0.1 m/s along x-axis
+// Re = U * (2r) / nu = 0.1 * 0.01 / 3.3e-6 ≈ 303  (laminar, Re << 2300)
 
-gradSchemes
-{
-    default         Gauss linear;
-}
+dimensions      [0 1 -1 0 0 0 0];
 
-divSchemes
-{
-    default         none;
-    div(phi,U)      Gauss linear;   // Central differencing — suitable for laminar flow
-}
+internalField   uniform (0 0 0);
 
-laplacianSchemes
+boundaryField
 {
-    default         Gauss linear corrected;
-}
+    inlet
+    {
+        type            fixedValue;
+        value           uniform (0.1 0 0);
+    }
 
-interpolationSchemes
-{
-    default         linear;
-}
+    outlet
+    {
+        type            zeroGradient;
+    }
 
-snGradSchemes
-{
-    default         corrected;
+    wall
+    {
+        type            noSlip;
+    }
 }
 
 // ************************************************************************* //

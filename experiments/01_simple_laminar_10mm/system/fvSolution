@@ -16,21 +16,6 @@ FoamFile
 
 solvers
 {
-    // Flux correction (required by correctPhi yes in PIMPLE with moving mesh)
-    pcorr
-    {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       1e-06;
-        relTol          0;
-    }
-
-    pcorrFinal
-    {
-        $pcorr;
-        relTol          0;
-    }
-
     p
     {
         solver          PCG;
@@ -58,32 +43,15 @@ solvers
         $U;
         relTol          0;
     }
-
-    // Mesh motion: intermediate cell-displacement field solved by
-    // displacementLaplacian (propagates wall BC to interior points).
-    cellDisplacement
-    {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       1e-8;
-        relTol          0;
-    }
-
-    cellDisplacementFinal
-    {
-        $cellDisplacement;
-        relTol          0;
-    }
 }
 
 PIMPLE
 {
-    nOuterCorrectors         1;    // one-way FSI: no fluid→structure feedback
-    nCorrectors              2;
+    nOuterCorrectors        1;   // 1 = PISO mode, sufficient for CFL < 1
+    nCorrectors             2;
     nNonOrthogonalCorrectors 1;
-    correctPhi               yes;  // recompute face fluxes after mesh motion
-    pRefCell                 0;
-    pRefValue                0;
+    pRefCell                0;
+    pRefValue               0;
 }
 
 // ************************************************************************* //

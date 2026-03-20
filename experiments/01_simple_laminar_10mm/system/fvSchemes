@@ -27,13 +27,13 @@ gradSchemes
 divSchemes
 {
     default         none;
-    div(phi,U)      Gauss linear;   // Central differencing — suitable for laminar flow
-    div((nuEff*dev2(T(grad(U))))) Gauss linear;   // Required by pimpleFoam stress term
+    div(phi,U)      Gauss linear;
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;   // viscous stress term (required by pimpleFoam)
 }
 
 laplacianSchemes
 {
-    default         Gauss linear corrected;
+    default         Gauss linear limited 0.5;
 }
 
 interpolationSchemes
@@ -43,7 +43,7 @@ interpolationSchemes
 
 snGradSchemes
 {
-    default         corrected;
+    default         limited 0.5;
 }
 
 // ************************************************************************* //

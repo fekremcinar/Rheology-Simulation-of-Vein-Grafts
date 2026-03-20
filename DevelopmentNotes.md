@@ -31,10 +31,11 @@ docker run -it --rm \
 ```
 
 Inside the container:
+
 ```bash
-cp -r /work/experiments/02_heartbeat_laminar /work/run/
-cd /work/run/02_heartbeat_laminar
-touch 02_heartbeat_laminar.foam
+cp -r /work/experiments/01_simple_laminar /work/run/
+cd /work/run/01_simple_laminar
+touch 01_simple_laminar.foam
 blockMesh
 checkMesh
 pimpleFoam
@@ -42,9 +43,38 @@ pimpleFoam
 
 
 ```bash
-cp -r /work/experiments/03_vessel_junction /work/run/
-cd /work/run/03_vessel_junction
-touch 03_vessel_junction.foam
+cp -r /work/experiments/01_simple_laminar_10mm /work/run/
+cd /work/run/01_simple_laminar_10mm
+touch 01_simple_laminar_10mm.foam
+blockMesh
+checkMesh
+pimpleFoam
+```
+
+
+```bash
+cp -r /work/experiments/02_biphasic_heartbeat /work/run/
+cd /work/run/02_biphasic_heartbeat
+touch 02_biphasic_heartbeat.foam
+blockMesh
+checkMesh
+pimpleFoam
+```
+
+```bash
+cp -r /work/experiments/03_triphasic_heartbeat /work/run/
+cd /work/run/03_triphasic_heartbeat
+touch 03_triphasic_heartbeat.foam
+blockMesh
+checkMesh
+pimpleFoam
+```
+
+```bash
+cp -r /work/experiments/04_vessel_junction /work/run/
+cd /work/run/04_vessel_junction
+touch 04_vessel_junction.foam
+
 blockMesh
 checkMesh
 pimpleFoam

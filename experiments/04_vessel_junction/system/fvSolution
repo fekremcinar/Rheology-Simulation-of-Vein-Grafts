@@ -47,9 +47,9 @@ solvers
 
 PIMPLE
 {
-    // nOuterCorrectors = 3: downstream CFL can reach ~2.8 at peak systole
-    // (flow accelerates through the contraction by the area ratio (r1/r2)^2).
-    // Three outer correctors give stability without excessive computational cost.
+    // nOuterCorrectors = 3: CFL_inlet_peak = 0.48 and CFL_outlet_peak = 0.24,
+    // both < 1. PISO (1 corrector) is stable, but 3 correctors give robustness
+    // near the step shear layer and recirculation zone without extra cost.
     nOuterCorrectors    3;
     nCorrectors         2;
     nNonOrthogonalCorrectors 1;

@@ -14,15 +14,10 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Blood rheology — Newtonian approximation for large vessels (Re << 2300)
-//
-//   Dynamic viscosity : mu  = 0.0035  Pa·s          (at 37°C)
+// Blood rheology (Newtonian approximation for large vessels, Re << 2300)
+//   Dynamic viscosity : mu  = 0.0035  Pa·s
 //   Density           : rho = 1060    kg/m³
-//   Kinematic viscosity: nu = mu/rho = 3.302e-6 m²/s ≈ 3.3e-6 m²/s
-//
-// Note: icoFoam requires kinematic viscosity (nu), not dynamic viscosity.
-// The Newtonian model is valid when shear rate > 100 s⁻¹ (large arteries).
-// For low-shear recirculation zones, consider a Carreau model comparison.
+//   Kinematic viscosity: nu = mu/rho = 3.3018e-6 m²/s ≈ 3.3e-6 m²/s
 
 transportModel  Newtonian;
 

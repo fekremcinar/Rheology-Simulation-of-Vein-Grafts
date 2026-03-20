@@ -9,40 +9,35 @@ FoamFile
 {
     version     2.0;
     format      ascii;
-    class       dictionary;
-    object      fvSchemes;
+    class       volScalarField;
+    object      p;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-ddtSchemes
-{
-    default         Euler;          // First-order implicit time integration
-}
+// Kinematic pressure (p/rho), units: m²/s²
+// Outlet is set to zero reference; inlet pressure develops from the flow.
 
-gradSchemes
-{
-    default         Gauss linear;
-}
+dimensions      [0 2 -2 0 0 0 0];
 
-divSchemes
-{
-    default         none;
-    div(phi,U)      Gauss linear;   // Central differencing — suitable for laminar flow
-}
+internalField   uniform 0;
 
-laplacianSchemes
+boundaryField
 {
-    default         Gauss linear corrected;
-}
+    inlet
+    {
+        type            zeroGradient;
+    }
 
-interpolationSchemes
-{
-    default         linear;
-}
+    outlet
+    {
+        type            fixedValue;
+        value           uniform 0;
+    }
 
-snGradSchemes
-{
-    default         corrected;
+    wall
+    {
+        type            zeroGradient;
+    }
 }
 
 // ************************************************************************* //

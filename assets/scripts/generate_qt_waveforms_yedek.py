@@ -33,7 +33,7 @@ Usage:
   python3 assets/scripts/generate_qt_waveforms.py
 
 Requirements:
-  numpy, scipy, matplotlib
+  numpy, scipy, matplotlib (optional -- skipped if not installed)
 """
 
 import os
@@ -121,40 +121,35 @@ def make_waveform(t_ctrl, Qn_ctrl, T_period, N_dense=200, N_foam=50):
 
     Returns
     -------
-    t_dense, Qn_dense_raw, Qn_dense_norm, t_foam, Qn_foam, cs_norm
-
-    Qn_dense_raw  : spline evaluated on dense grid, NOT renormalized.
-                    This matches the hardcoded Q_table values in 0/U BCs.
-    Qn_dense_norm : renormalized so mean = 1.0 exactly (used for OpenFOAM table).
+    t_dense, Qn_dense, t_foam, Qn_foam, cs_norm
     """
-    # Periodic spline on raw control points
+    # Periodic spline
     cs_raw = CubicSpline(t_ctrl, Qn_ctrl, bc_type="periodic")
 
     # Dense evaluation
-    t_d    = np.linspace(0, T_period, N_dense, endpoint=False)
+    t_d = np.linspace(0, T_period, N_dense, endpoint=False)
     Qn_raw = cs_raw(t_d)
 
     # Renormalize to mean = 1.0
     mean_raw = np.trapezoid(Qn_raw, t_d) / T_period
-    scale    = 1.0 / mean_raw if abs(mean_raw) > 1e-12 else 1.0
-    cs_norm  = CubicSpline(t_ctrl, Qn_ctrl * scale, bc_type="periodic")
-    Qn_d     = cs_norm(t_d)
+    scale = 1.0 / mean_raw if abs(mean_raw) > 1e-12 else 1.0
+    cs_norm = CubicSpline(t_ctrl, Qn_ctrl * scale, bc_type="periodic")
+    Qn_d = cs_norm(t_d)
     mean_check = np.trapezoid(Qn_d, t_d) / T_period
     print(f"  Renorm factor = {scale:.4f},  mean(Q_norm) after = {mean_check:.5f}")
-    print(f"  Raw peak Q_norm = {Qn_raw.max():.4f},  Renorm peak = {Qn_d.max():.4f}")
 
-    # OpenFOAM table (renormalized)
+    # OpenFOAM table
     t_f  = np.linspace(0, T_period, N_foam, endpoint=False)
     Qn_f = cs_norm(t_f)
 
-    return t_d, Qn_raw, Qn_d, t_f, Qn_f, cs_norm
+    return t_d, Qn_d, t_f, Qn_f, cs_norm
 
 
 print("=" * 60)
 print("Option A -- Holdsworth CCA biphasic")
 print("=" * 60)
-bip_td, bip_Qnd_raw, bip_Qnd, bip_tf, bip_Qnf, bip_cs = make_waveform(bip_t, bip_Qn, T)
-bip_Qd = bip_Qnd_raw * Q_mean_bip   # raw: matches hardcoded BC Q_table
+bip_td, bip_Qnd, bip_tf, bip_Qnf, bip_cs = make_waveform(bip_t, bip_Qn, T)
+bip_Qd = bip_Qnd * Q_mean_bip
 bip_Ud = bip_Qd / A
 bip_Qf = bip_Qnf * Q_mean_bip
 bip_Uf = bip_Qf / A
@@ -163,8 +158,8 @@ print()
 print("=" * 60)
 print("Option B -- Mikheev SFA triphasic")
 print("=" * 60)
-tri_td, tri_Qnd_raw, tri_Qnd, tri_tf, tri_Qnf, tri_cs = make_waveform(tri_t, tri_Qn, T)
-tri_Qd = tri_Qnd_raw * Q_mean_tri   # raw: matches hardcoded BC Q_table
+tri_td, tri_Qnd, tri_tf, tri_Qnf, tri_cs = make_waveform(tri_t, tri_Qn, T)
+tri_Qd = tri_Qnd * Q_mean_tri
 tri_Ud = tri_Qd / A
 tri_Qf = tri_Qnf * Q_mean_tri
 tri_Uf = tri_Qf / A
@@ -189,35 +184,25 @@ try:
     import matplotlib.pyplot as plt
 
     def _plot(td, Qnd, Ud, t_ctrl, Qn_ctrl_orig, Q_mean, cs_norm, title, fname):
-        """Two-panel figure: Q(t) [mL/s] and velocity (mean + centerline) [cm/s]."""
+        """Two-panel figure: Q_norm(t) and physical Q(t)/U(t)."""
         fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-        T_period = td[-1] - td[0] + (td[1] - td[0])  # recover period from dense grid
-        fig.suptitle(
-            f"{title}\n(one cardiac cycle, T = {T_period:.3f} s, 70 bpm)",
-            fontsize=11, fontweight="bold"
-        )
+        fig.suptitle(title, fontsize=12, fontweight="bold")
 
-        Q_mls    = Qnd * Q_mean * 1e6          # m3/s -> mL/s
-        U_mean_cms  = Ud * 100                 # m/s  -> cm/s
-        U_center_cms = 2.0 * U_mean_cms        # parabolic: U_center = 2 * U_mean
-
-        # Panel 1: flow rate Q(t) [mL/s]
+        # Panel 1: Q_norm
         ax = axes[0]
-        ax.plot(td, Q_mls, "C0-", lw=2, label="Q(t)")
+        ax.plot(td * 1000, Qnd, "C0-", lw=2, label="Q_norm(t) [spline]")
         ax.axhline(0, color="k", lw=0.5, ls="--")
-        ax.axhline(Q_mean * 1e6, color="gray", lw=0.8, ls=":",
-                   label=f"Q_mean = {Q_mean*1e6:.4f} mL/s")
-        ax.set_ylabel("Flow Rate Q(t)  [mL/s]", fontsize=10)
+        ax.axhline(1, color="gray", lw=0.8, ls=":", label="Q_norm = 1 (mean)")
+        ax.set_ylabel("Q_norm = Q(t)/Q_mean", fontsize=10)
         ax.legend(fontsize=9)
         ax.grid(True, alpha=0.4)
 
-        # Panel 2: velocity [cm/s] -- mean and centerline
+        # Panel 2: velocity
         ax = axes[1]
-        ax.plot(td, U_mean_cms,   "C1-",  lw=2, label="U_mean(t)   (cross-section average)")
-        ax.plot(td, U_center_cms, "C2--", lw=1.5, label="U_center(t) (parabolic centreline = 2 x U_mean)")
+        ax.plot(td * 1000, Ud * 100, "C1-", lw=2, label="U_mean(t) [cm/s]")
         ax.axhline(0, color="k", lw=0.5, ls="--")
-        ax.set_xlabel("Time  [s]", fontsize=10)
-        ax.set_ylabel("Velocity  [cm/s]", fontsize=10)
+        ax.set_xlabel("Time [ms]", fontsize=10)
+        ax.set_ylabel("Mean velocity [cm/s]", fontsize=10)
         ax.legend(fontsize=9)
         ax.grid(True, alpha=0.4)
 
@@ -227,10 +212,10 @@ try:
         plt.close(fig)
         print(f"Saved: {out}")
 
-    _plot(bip_td, bip_Qnd_raw, bip_Ud, bip_t, bip_Qn, Q_mean_bip, bip_cs,
+    _plot(bip_td, bip_Qnd, bip_Ud, bip_t, bip_Qn, Q_mean_bip, bip_cs,
           "Biphasic waveform (Holdsworth CCA 1999 -> 1 mm artery)",
           "qt_biphasic_waveform.png")
-    _plot(tri_td, tri_Qnd_raw, tri_Ud, tri_t, tri_Qn, Q_mean_tri, tri_cs,
+    _plot(tri_td, tri_Qnd, tri_Ud, tri_t, tri_Qn, Q_mean_tri, tri_cs,
           "Triphasic waveform (Mikheev SFA 2020 -> 1 mm artery)",
           "qt_triphasic_waveform.png")
 

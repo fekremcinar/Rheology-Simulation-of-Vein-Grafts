@@ -51,14 +51,12 @@ With venous graft  (r1 → r3 → r2, each step ratio < 3/2)
 │   ├── 01_simple_laminar/
 │   ├── 02_biphasic_heartbeat/
 │   ├── 03_triphasic_heartbeat/
-│   ├── 04_vessel_junction/
-│   ├── 05_venous_graft/
-│   ├── 06_graft_length_study/
-│   ├── 07_graft_radius_study/
-│   └── assets/scripts/
+│   └── 04_vessel_junction/
 ├── run/                  # Solver outputs (not tracked in git)
 ├── assets/
-│   └── paraview/          # ParaView Python macros
+│   ├── paraview/         # ParaView Python macros
+│   ├── scripts/          # Waveform generation and utility scripts
+│   └── img/              # Reference images and waveform plots
 ├── tmp/                  # Scratch files and screenshots
 └── README.md
 ```
@@ -168,6 +166,8 @@ fluctuations are very small"* — attributed to high impedance at low harmonics 
 peripheral reflecting sites. Reymond et al. (2009) [4] confirms that in cerebral and carotid
 branches, *"flow is purely unidirectional."*
 
+![Biphasic Q(t) waveform — Holdsworth CCA 1999, scaled to 1 mm artery](assets/img/qt_biphasic_waveform.png)
+
 **Option B — Triphasic (peripheral/femoral territory):**
 
 Source: Mikheev et al. (2020) [2], superficial femoral artery (SFA), physical simulation.
@@ -181,6 +181,8 @@ Physical note: Flow reversal in the femoral territory occurs in large vessels (5
 vessels branch toward 1 mm, viscous damping progressively attenuates the reversed-flow
 component. For research purposes, the triphasic waveform is included as a worst-case
 scenario to test how flow reversal influences hemodynamic indices at anastomosis sites.
+
+![Triphasic Q(t) waveform — Mikheev SFA 2020, scaled to 1 mm artery](assets/img/qt_triphasic_waveform.png)
 
 **Velocity Profile (both experiments):**
 
@@ -371,25 +373,31 @@ after the simulation completes.
 ### Experiment 01 — Steady Poiseuille Validation in a 1 mm Tube (Baseline)
 
 **Solver:** `pimpleFoam` (transient — runs until steady state)
-**Purpose:** Baseline validation. Confirm that a constant-velocity inlet produces a
-fully developed parabolic (Hagen-Poiseuille) profile at the outlet.
+**Purpose:** Baseline validation. Confirm that a fully developed parabolic
+(Hagen-Poiseuille) inlet profile is preserved by the solver at the outlet, and that
+the computed pressure drop and wall shear stress match the analytical Poiseuille values.
 
 **Boundary conditions:**
-- Inlet: `fixedValue U = (0.0306 0 0) m/s` (uniform plug flow)
-- Outlet: `fixedValue p = 0`, `inletOutlet U`
-- Wall: `noSlip`
+
+| Boundary | `U` | `p` |
+|----------|-----|-----|
+| Inlet | `codedFixedValue` — parabolic profile u(r) = U_max·(1 − r²/R²), U_max = 0.062 m/s | `zeroGradient` |
+| Outlet | `zeroGradient` | `fixedValue 0` |
+| Wall | `noSlip` | `zeroGradient` |
+
+Inlet parameters: R = 0.5 mm, U_mean = 0.031 m/s, U_max = 0.062 m/s (= 2 × U_mean).
 
 **Why `pimpleFoam` for all experiments?**
 All experiments use `pimpleFoam` for consistency. It handles both this steady-state
 case (the start-up transient simply dies out after t ≈ R²/ν ≈ 7.6 s) and the
-pulsatile transient cases in Experiments 02–06 without any solver switch.
-`endTime = 1 s` is sufficient: the diffusion time-scale t_diff = R²/ν ≈ 7.6 s is how long it takes to develop entirely from rest, but the profile is already ≥95% converged well before t = 1 s for this low-Re case.
+pulsatile transient cases in Experiments 02–04 without any solver switch.
+`endTime = 5 s` is sufficient: the diffusion time-scale t_diff = R²/ν ≈ 7.6 s is how long it takes to develop entirely from rest, but the profile is already ≥95% converged well before t = 1 s for this low-Re case.
 
-**Expected outcome:** Parabolic velocity profile at outlet; centreline velocity = 2 × U_mean;
-negligible pressure drop variation; Re ≈ 9.3 (fully laminar).
+**Expected outcome:** Parabolic velocity profile preserved at outlet; centreline velocity = 2 × U_mean = 0.062 m/s;
+wall shear stress WSS = 4·μ·U_mean/R = 0.868 Pa; Re ≈ 9.4 (fully laminar).
 
 **Validation:** Compare outlet profile to analytical Poiseuille solution:
-`U(r) = 2 U_mean (1 - (r/R)²)`.
+`U(r) = 2 U_mean (1 - (r/R)²) = 0.062 · (1 - (r/0.0005)²)`.
 
 **Run:**
 
@@ -398,8 +406,10 @@ docker run -it --rm \
   -u "$(id -u)":"$(id -g)" \
   -v "$HOME/Rheology-Simulation-of-Vein-Grafts":/work \
   opencfd/openfoam-default:2512
+```
 
-# Inside the container:
+Inside the docker container:
+```bash
 cp -r /work/experiments/01_simple_laminar /work/run/
 cd /work/run/01_simple_laminar
 touch 01_simple_laminar.foam
@@ -418,70 +428,28 @@ pimpleFoam
 ### Experiment 02 — Biphasic Pulsatile Heartbeat (Cerebral/Carotid Territory)
 
 **Solver:** `pimpleFoam` (transient)
-**Purpose:** Introduce a realistic pulsatile inlet waveform and confirm that the cardiac
-waveform shape is correctly resolved before adding geometric complexity.
+**Purpose:** Validate a physiologically realistic biphasic pulsatile inlet waveform
+(forward flow throughout the cycle) in a 1 mm straight tube before adding geometric
+complexity in later experiments.
 
-**Geometry:** Identical straight tube to Experiment 01 (r = 5 mm, L = 100 mm, same mesh).
+**Geometry:** Same 1 mm straight tube as Experiment 01 (r = 0.5 mm, L = 10 mm).
+
+**Waveform:** Holdsworth et al. (1999) [1] CCA waveform scaled to 1 mm via Murray's law.
+No flow reversal. See [Derivation of Q(t)](#derivation-of-qt-for-a-1-mm-artery).
 
 **Boundary conditions:**
 
 | Boundary | `U` | `p` |
 |----------|-----|-----|
-| Inlet | `codedFixedValue` — Womersley pulsatile (N=20 harmonics) | `zeroGradient` |
-| Outlet | `inletOutlet` (back-flow safe) | `fixedValue 0` |
+| Inlet | `codedFixedValue` — parabolic profile scaled by Q(t) | `zeroGradient` |
+| Outlet | `zeroGradient` | `fixedValue 0` |
 | Wall | `noSlip` | `zeroGradient` |
 
-**Inlet profile — Womersley solution (`0/U`):**
-
-The cardiac waveform U_mean(t) is the **Holdsworth et al. (1999) archetypal CCA waveform**,
-Fourier-decomposed into N = 20 harmonics. The radial profile for each harmonic is given by the
-**Womersley solution** (Aboelkassem & Virag 2019, Eq. 14) rather than the parabolic approximation:
-
-```
-U(r,t) = 2·U₀·(1−η²) + Σₙ Re[Ûₙ · W_n(η) · e^(inω₀t)],  η = r/R
-```
-
-Womersley shape functions W_n(η) are precomputed via Bessel functions J₀, J₁ and stored as
-60-point radial lookup tables inside the `codedFixedValue` block. At runtime, only linear
-interpolation and trigonometric summation are performed — no Bessel calls needed.
-
-| Waveform feature | t [s] | φ = t/T | U_mean [m/s] | Q [mL/s] |
-|---|---|---|---|---|
-| End diastole / R-wave | 0.000 | 0.000 | 0.050 | 3.9 |
-| **Peak systole** | **0.142** | **0.166** | **0.500** | **39.2** |
-| Dicrotic notch | 0.372 | 0.434 | 0.100 | 7.9 |
-| Diastolic plateau | 0.500 | 0.584 | 0.080 | 6.3 |
-| End diastole | 0.857 | 1.000 | 0.050 | 3.9 |
-
-The parabolic formula `U(r) = 2 U_mean (1 − (r/R)²)` was the previous approximation;
-it has been **replaced by the Womersley solution** which correctly models the blunting
-effect at high Womersley numbers and the diastolic near-wall reversal.
-
 **Key parameters:**
-- T = 0.857 s (70 bpm), U_peak = 0.5 m/s, U_dia = 0.05 m/s, U₀ (DC mean) = 0.131 m/s
-- Holdsworth waveform (PCHIP, N=20): t_peak = 0.142 s, t_notch = 0.372 s, Q_peak = 39.2 mL/s, Q_mean = 10.3 mL/s, Q_notch = 7.9 mL/s
-- Womersley number: α₁ = R√(ω₀/ν) ≈ 7.45 (α ≫ 1 → Womersley profile mandatory; parabolic underestimates near-wall reversal)
-- N = 20 Fourier harmonics (reduces diastolic Gibbs ringing from ±16 mm/s to ±4 mm/s vs N=8)
-- α_n = α₁·√n: 7.45, 10.54, 12.91, 14.91, 16.67, 18.26, 19.72, 21.08, ..., 33.33 (n=20)
-- Δt = 0.005 s → ~171 steps/cycle; peak CFL ≈ 1.0 (PIMPLE with nOuterCorrectors = 2)
-- writeInterval = 0.02 s → ~43 snapshots/cycle (adequate for OSI/TAWSS integration)
-
-**Run for:** 5 cardiac cycles (endTime = 4.285 s). Discard first 3; compute TAWSS, OSI,
-RRT from t = 2.571 s to 4.285 s (last 2 cycles).
-
-**Graft Transition Geometry Note:** Not applicable (straight tube), but this inlet
-waveform is reused unchanged in all subsequent experiments for direct comparability.
-
-**Expected outcome:**
-- Centreline velocity: ~0.22 m/s (late diastole) → ~0.71 m/s (peak systole, blunter than parabolic)
-- **Near-wall flow reversal ring** (~−1.05 cm/s at η = 0.98) during early diastole — the Womersley annular effect, matching paper Fig. 6 (Aboelkassem & Virag 2019)
-- Profile transitions: jet-like (systole) ↔ wake/M-shaped with near-wall reversal (early diastole) ↔ flat (late diastole)
-- OSI > 0 near the wall (local reversal), OSI ≈ 0 at centreline
-- TAWSS ≈ 0.28 Pa (time-averaged; mean flow unchanged)
-- Re_peak ≈ 1515, Re_mean ≈ 212 — both well below 2300 (laminar throughout)
+- Q_mean = 24 μl/s, Q_peak = 94 μl/s, U_mean = 3.1 cm/s, Re_mean = 9.3, Re_peak = 36
+- Run for 3 cardiac cycles (endTime = 2.571 s); discard first cycle as start-up transient; compute TAWSS, OSI, RRT from t = 0.857 s to 2.571 s
 
 **Run:**
-
 ```bash
 docker run -it --rm \
   -u "$(id -u)":"$(id -g)" \
@@ -489,39 +457,44 @@ docker run -it --rm \
   opencfd/openfoam-default:2512
 ```
 
-Inside the container:
+Inside the docker container:
 ```bash
-cp -r /work/experiments/02_heartbeat_laminar /work/run/
-cd /work/run/02_heartbeat_laminar
-touch 02_heartbeat_laminar.foam
+cp -r /work/experiments/02_biphasic_heartbeat /work/run/
+cd /work/run/02_biphasic_heartbeat
+touch 02_biphasic_heartbeat.foam
 blockMesh
 checkMesh
 pimpleFoam
 ```
 
-> Note: Execution time ~10 minutes on dockers with 8 CPU cores and 12 GB allocated. 
+**ParaView screenshot:**
+
+![Experiment 02 — Biphasic Pulsatile Heartbeat (Cerebral/Carotid Territory)](assets/img/02_biphasic_heartbeat.jpg)
 
 ---
 
 ### Experiment 03 — Triphasic Pulsatile Heartbeat (Peripheral/Femoral Territory)
 
 **Solver:** `pimpleFoam` (transient)
-**Purpose:** Quantify the hemodynamic penalty of a direct anastomosis between mismatched
-vessels. This is the **worst-case reference** for all subsequent graft experiments.
+**Purpose:** Validate a physiologically realistic triphasic pulsatile inlet waveform
+(includes flow reversal in early diastole) in a 1 mm straight tube.
 
-**Geometry:** r1 = 5 mm (donor), r2 = 3 mm (recipient); sudden step junction; no graft.
-**Inlet length:** ≥ 10 × r1 upstream of junction.
-**Outlet length:** ≥ 10 × r2 downstream of junction.
+**Geometry:** Same 1 mm straight tube as Experiments 01–02 (r = 0.5 mm, L = 10 mm).
 
-**Key physics:** The jet Reynolds number at the step is Re_jet ≈ 4200 even though global
-Re ≈ 1514. Expect a strong recirculation zone and elevated RRT directly downstream of
-the step.
+**Waveform:** Mikheev et al. (2020) [2] SFA waveform scaled to 1 mm via Murray's law.
+Includes flow reversal (AU ≈ 12). See [Derivation of Q(t)](#derivation-of-qt-for-a-1-mm-artery).
 
-**Important — Graft Transition Geometry:**
-In this experiment there is **no graft** — the transition is a sudden step (worst case).
-Subsequent experiments will replace this with tapered transitions to show improvement.
+**Boundary conditions:**
 
-**Metrics to record:** Max RRT, min TAWSS, OSI map, recirculation length (normalised by r2).
+| Boundary | `U` | `p` |
+|----------|-----|-----|
+| Inlet | `codedFixedValue` — parabolic profile scaled by Q(t); u < 0 during reversal | `zeroGradient` |
+| Outlet | `zeroGradient` (allows inflow during reversal phase) | `fixedValue 0` |
+| Wall | `noSlip` | `zeroGradient` |
+
+**Key parameters:**
+- Q_mean = 16.6 μl/s, Q_peak = 199 μl/s, Q_min = −53 μl/s (reversal), Re_mean = 6.4, Re_peak = 77
+- Run for 3 cardiac cycles (endTime = 2.571 s); discard first cycle as start-up transient; compute TAWSS, OSI, RRT from t = 0.857 s to 2.571 s
 
 **Run:**
 
@@ -530,36 +503,53 @@ docker run -it --rm \
   -u "$(id -u)":"$(id -g)" \
   -v "$HOME/Rheology-Simulation-of-Vein-Grafts":/work \
   opencfd/openfoam-default:2512
+```
 
-# Inside the container:
-cp -r /work/experiments/03_vessel_junction /work/run/
-cd /work/run/03_vessel_junction
-touch 03_vessel_junction.foam
-
+Inside the docker container:
+```bash
+cp -r /work/experiments/03_triphasic_heartbeat /work/run/
+cd /work/run/03_triphasic_heartbeat
+touch 03_triphasic_heartbeat.foam
 blockMesh
 checkMesh
 pimpleFoam
 ```
+
+**ParaView screenshot:**
+
+![Experiment 03 — Triphasic Pulsatile Heartbeat (Peripheral/Femoral Territory)](assets/img/03_triphasic_heartbeat.jpg)
 
 ---
 
 ### Experiment 04 — Steady Pulsatile Flow Through a Vessel Junction (No Graft)
 
 **Solver:** `pimpleFoam` (transient)
-**Purpose:** Introduce a venous graft (r3, L) between the two vessels and measure the
-reduction in thrombosis risk compared to Experiment 03.
+**Purpose:** Simulate biphasic pulsatile flow through a sudden **step expansion**
+(D1 = 1 mm → D2 = 2 mm, no graft) to establish the hemodynamic baseline at the junction.
+The expansion ratio r2/r1 = 2.0 exceeds the 3/2 graft threshold, so recirculation is
+expected. This baseline quantifies max RRT, OSI, and reattachment length before a graft
+is introduced in later experiments.
 
-**Geometry:** r1 = 5 mm → graft (r3 = 4 mm, L = 20 mm) → r2 = 3 mm.
-Each step ratio: r1/r3 = 1.25 < 3/2 ✓ and r3/r2 = 1.33 < 3/2 ✓.
+**Geometry:** r1 = 0.5 mm (inlet, D1 = 1 mm) → sudden step → r2 = 1.0 mm (outlet, D2 = 2 mm).
+- Inlet length L1 = 10 mm (10 × D1); outlet length L2 = 20 mm (10 × D2); total L = 30 mm.
+- Step height h = r2 − r1 = 0.5 mm. Area ratio (r2/r1)² = 4.
 
-**Graft Transition Geometry: Linear Taper Is Not the Only Option**
-This experiment uses a **linear taper** (conical transition) as the baseline. The taper
-half-angle must remain **< 7°** to avoid flow separation at the transition. For the
-baseline geometry (r1 = 5 mm → r3 = 4 mm), the minimum graft length for a non-separating
-taper is ~8 mm. Other transition profiles (sigmoid, parabolic) are expected to give lower
-recirculation and are candidates for a sensitivity study.
+**Waveform:** Holdsworth CCA biphasic (identical to Experiment 02).
 
-**Metrics to record:** Max RRT, min TAWSS, OSI, recirculation length, pressure drop.
+**Boundary conditions:**
+
+| Boundary | `U` | `p` |
+|----------|-----|-----|
+| Inlet | `codedFixedValue` — biphasic parabolic profile, R0 = 0.5 mm | `zeroGradient` |
+| Outlet | `inletOutlet` (guards against recirculation reaching outlet) | `fixedValue 0` |
+| Wall | `noSlip` | `zeroGradient` |
+
+**Key parameters:**
+- Same inlet as Exp 02: Q_mean = 24 μl/s, Q_peak = 94 μl/s, Re_mean = 9.3, Re_peak = 36
+- Outlet mean velocity = inlet / 4 (continuity): U_mean_out = 0.76 cm/s, Re_out_peak = 9
+- Run for 3 cardiac cycles (endTime = 2.571 s); discard first cycle; compute TAWSS, OSI, RRT from t = 0.857 s to 2.571 s
+
+**Metrics to record:** Max RRT, min TAWSS, max OSI, recirculation length / step height, pressure drop.
 
 **Run:**
 
@@ -568,11 +558,13 @@ docker run -it --rm \
   -u "$(id -u)":"$(id -g)" \
   -v "$HOME/Rheology-Simulation-of-Vein-Grafts":/work \
   opencfd/openfoam-default:2512
+```
 
-# Inside the container:
-cp -r /work/experiments/04_venous_graft /work/run/
-cd /work/run/04_venous_graft
-touch 04_venous_graft.foam
+Inside the docker container:
+```bash
+cp -r /work/experiments/04_vessel_junction /work/run/
+cd /work/run/04_vessel_junction
+touch 04_vessel_junction.foam
 
 blockMesh
 checkMesh
@@ -721,8 +713,8 @@ blocks
 
 | Metric | Expected value | Max allowed difference vs Exp 01 |
 |--------|---------------|----------------------------------|
-| Centreline U_X at outlet | 2 x U_mean = 0.2 m/s | < 2% |
-| Wall WSS at outlet | 4mu U_mean / R = 0.28 Pa | < 2% |
+| Centreline U_X at outlet | 2 x U_mean = 0.062 m/s | < 2% |
+| Wall WSS at outlet | 4mu U_mean / R = 0.868 Pa | < 2% |
 | Parabola fit R^2 | > 0.9999 | same order |
 
 If all three pass, all earlier experiments are declared mesh-converged.

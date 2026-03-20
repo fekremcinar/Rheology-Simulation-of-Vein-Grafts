@@ -3,7 +3,7 @@
 | \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
 |  \\    /   O peration     | Version:  2512                                  |
 |   \\  /    A nd           | Web:      www.OpenFOAM.com                      |
-|    \\/     M anipulation  |                                                 |
+|    \\/     M aniperation  |                                                 |
 \*---------------------------------------------------------------------------*/
 FoamFile
 {
@@ -14,19 +14,30 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Experiment 04 — Heartbeat Flow Through a Vessel Junction (No Graft)
+// Experiment 04 -- Biphasic Pulsatile Flow Through a Sudden Expansion Junction
 //
-// Solver: pimpleFoam (transient incompressible)
+// Geometry: r1 = 0.5 mm (inlet, D1 = 1 mm) --> r2 = 1.0 mm (outlet, D2 = 2 mm)
+// Inlet waveform: Holdsworth CCA biphasic (identical to Experiment 02)
+//   Q_mean  = 24 uL/s  (2.404e-8 m3/s)
+//   Q_peak  = 94 uL/s  (at t ~ 0.14 s per cycle)
+//   U_mean  = 3.06 cm/s
+//   U_center_pk = 24 cm/s
+//   Re_mean = 9.3,  Re_peak = 36 (in the inlet tube)
 //
-// Pulsatile parabolic inlet (r1 = 5 mm) drives flow for 5 cardiac cycles.
-// First 3 cycles are discarded (initialisation transient); OSI, TAWSS, RRT
-// are computed over the final 2 cycles (t = 2.571 s to 4.285 s).
+// After the step (area ratio = (r2/r1)^2 = 4):
+//   U_mean_outlet = U_mean_inlet / 4 = 0.76 cm/s  (continuity)
+//   Re_outlet_pk  = Re_inlet_pk / 4  = 9  (well laminar)
 //
-// Time step: dt = 0.005 s → ~171 steps per cycle.
-//   Peak axial CFL in upstream tube: U_peak_centreline * dt / dx
-//     = (2 × 0.5) × 0.005 / 0.0025 = 2.0
-//   CFL in downstream tube: area-scaled U_peak × (r1/r2)² ≈ 1.39 × 2 = 2.78
-//   Handled by nOuterCorrectors = 3 in fvSolution (PIMPLE loop).
+// Time step: dt = 0.0005 s
+//   CFL in inlet (dx = 0.00025 m, U_center_pk = 0.24 m/s):
+//     CFL_inlet_pk = 0.24 * 0.0005 / 0.00025 = 0.48  (< 1, PISO-stable)
+//   CFL in outlet (dx = 0.0005 m, jet U ~ 0.24 m/s just past step):
+//     CFL_outlet_pk = 0.24 * 0.0005 / 0.0005 = 0.24  (< 1)
+//   nOuterCorrectors = 3 for robustness near the step shear layer.
+//
+// Run: 3 cardiac cycles (T = 0.857 s, 70 bpm).
+//   Discard first cycle as start-up transient.
+//   Compute TAWSS, OSI, RRT from t = 0.857 s to 2.571 s.
 
 application     pimpleFoam;
 
@@ -34,12 +45,12 @@ startFrom       startTime;
 startTime       0;
 
 stopAt          endTime;
-endTime         4.285;      // 5 × T = 5 × 0.857 s
+endTime         2.571;      // 3 x T = 3 x 0.857 s
 
-deltaT          0.005;
+deltaT          0.0005;
 
 writeControl    runTime;
-writeInterval   0.02;       // 43 snapshots/cycle — needed for accurate OSI/TAWSS
+writeInterval   0.025;      // 34 snapshots/cycle -- sufficient for OSI/TAWSS
 
 purgeWrite      0;
 writeFormat     ascii;
@@ -59,24 +70,30 @@ functions
     {
         type            surfaceFieldValue;
         libs            ("libfieldFunctionObjects.so");
-        field           phi;
-        operation       sum;
-        regionType      patch;
-        name            inlet;
+        executeControl  timeStep;
         writeControl    timeStep;
         writeInterval   1;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            inlet;
+        operation       sum;
+        fields          (phi);
     }
 
     flowRateOutlet
     {
         type            surfaceFieldValue;
         libs            ("libfieldFunctionObjects.so");
-        field           phi;
-        operation       sum;
-        regionType      patch;
-        name            outlet;
+        executeControl  timeStep;
         writeControl    timeStep;
         writeInterval   1;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            outlet;
+        operation       sum;
+        fields          (phi);
     }
 
     pressureProbes
@@ -88,8 +105,8 @@ functions
         fields          (p);
         probeLocations
         (
-            ( 0.030  0  0 )   // probe 0: upstream r1 section (x = 30 mm)
-            ( 0.080  0  0 )   // probe 1: downstream r2 section (x = 80 mm)
+            ( 0.005  0  0 )   // probe 0: mid-inlet, r1 section (x = 5 mm)
+            ( 0.025  0  0 )   // probe 1: mid-outlet, r2 section (x = 25 mm)
         );
     }
 }

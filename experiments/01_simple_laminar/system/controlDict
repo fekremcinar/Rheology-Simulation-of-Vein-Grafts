@@ -14,33 +14,24 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Experiment 01 -- Simple Laminar Flow in a Straight Tube (1 mm diameter)
-//
-// Solver: pimpleFoam (transient incompressible, PIMPLE algorithm)
-//
-// All experiments in this study use pimpleFoam for consistency.
-// For this steady-state case the transient dies out as the plug-flow
-// inlet diffuses into a parabolic profile.
-//
-// Vessel: r = 0.5 mm, D = 1 mm, L = 10 mm (L/D = 10)
-// Flow:   U_mean = 0.0306 m/ 9.3 (well in Stokes regime)Re 
-//
-// Entry length:  0.06 Entry  0.56  virtually zero.mm D 
-// CFL ~ 0.0306  0.01 / (0.01/40) = 0.0306  0.01 /  0.01200025 
-// Time step dt = 0.01 s is well within stability limits.
-
 application     pimpleFoam;
 
 startFrom       startTime;
 startTime       0;
 
 stopAt          endTime;
-endTime         1;            // physical seconds
 
-deltaT          0.01;
+// Run for 10 s — viscous diffusion time τ = r²/nu = (0.0005)²/3.3e-6 ≈ 0.076 s
+// 10 s ≈ 132 τ (well beyond the profile establishment time).
+endTime         5;
+
+// deltaT = 5e-4 s
+//   Courant_axial  = U*dt/dx_axial  = 0.031*5e-4 / (0.01/40) = 0.062  (< 1 ✓)
+//   Courant_radial = U*dt/dx_wall   = 0.031*5e-4 / ~1.1e-5   ≈ 1.4
+deltaT          0.0005;
 
 writeControl    runTime;
-writeInterval   0.1;             // write at t = 0.1 s
+writeInterval   0.1;        // save a snapshot every 0.1 s → 50 output times
 
 purgeWrite      0;
 writeFormat     ascii;
@@ -51,5 +42,141 @@ timeFormat      general;
 timePrecision   6;
 
 runTimeModifiable true;
+
+// ── Function objects: hemodynamic metrics ────────────────────────────────────
+//
+// These objects run every time step and write results to postProcessing/.
+//
+// Metrics computed:
+//   Q(t)      -- volumetric flow rate at inlet and outlet  [m^3/s]
+//   ΔP(t)     -- area-weighted mean kinematic pressure at inlet and outlet [m^2/s^2]
+//   WSS       -- wall shear stress vector field on wall patch  [m^2/s^2] (= Pa/rho)
+//   TAWSS     -- time-averaged magnitude of WSS field (from fieldAverage)
+//   U_mean    -- time-averaged velocity field
+//   p_mean    -- time-averaged pressure field
+//
+// Note: OSI and RRT are derived in post-processing from TAWSS:
+//   OSI  = 0.5 * (1 - |integral(tau*dt)| / integral(|tau|*dt))
+//   RRT  = 1 / [(1 - 2*OSI) * TAWSS]
+//   For steady flow OSI = 0, RRT = 1/TAWSS everywhere.
+
+functions
+{
+    // ── Q(t): volumetric flow rate ────────────────────────────────────────
+    // phi is the face flux [m^3/s]; sum over patch = total Q.
+    // Sign convention: negative at inlet (flux into domain), positive at outlet.
+    // Execute and write only at solver write times to reduce console/file spam.
+
+    flowRateInlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  writeTime;
+        writeControl    writeTime;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            inlet;
+        operation       sum;
+        fields          (phi);
+    }
+
+    flowRateOutlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  writeTime;
+        writeControl    writeTime;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            outlet;
+        operation       sum;
+        fields          (phi);
+    }
+
+    // ── ΔP(t): pressure drop across the tube ─────────────────────────────
+    // Kinematic pressure (p/rho). Multiply by rho=1060 for Pa.
+    // ΔP = pAvgInlet - pAvgOutlet  (outlet is fixed at 0 reference)
+
+    pAvgInlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  writeTime;
+        writeControl    writeTime;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            inlet;
+        operation       areaAverage;
+        fields          (p);
+    }
+
+    pAvgOutlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  writeTime;
+        writeControl    writeTime;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            outlet;
+        operation       areaAverage;
+        fields          (p);
+    }
+
+    // ── WSS field: wall shear stress vector on the wall patch ─────────────
+    // Output: volVectorField "wallShearStress" in each time directory.
+    // Units: kinematic [m^2/s^2].  Physical WSS [Pa] = rho * wallShearStress.
+    // Expected steady-state: |WSS| = 4*nu*U_mean/r = 4*3.3e-6*0.031/0.0005 = 8.18e-4 m^2/s^2
+    //                               => 1060 * 8.18e-4 = 0.867 Pa
+
+    wallShearStress
+    {
+        type            wallShearStress;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  writeTime;
+        writeControl    writeTime;
+        log             false;
+        patches         (wall);
+    }
+
+    // ── Time-averaged fields → TAWSS base ────────────────────────────────
+    // Computes running time-average of U, p, and wallShearStress.
+    // After simulation: wallShearStressMean = TAWSS vector field.
+    // In ParaView: mag(wallShearStressMean) gives scalar TAWSS map.
+
+    fieldAverage
+    {
+        type            fieldAverage;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  writeTime;
+        writeControl    writeTime;
+        log             false;
+        fields
+        (
+            U
+            {
+                mean        on;
+                prime2Mean  off;
+                base        time;
+            }
+            p
+            {
+                mean        on;
+                prime2Mean  off;
+                base        time;
+            }
+            wallShearStress
+            {
+                mean        on;
+                prime2Mean  off;
+                base        time;
+            }
+        );
+    }
+}
 
 // ************************************************************************* //

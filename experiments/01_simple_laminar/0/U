@@ -14,45 +14,47 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Velocity-driven steady Poiseuille validation (pimpleFoam).
+// Parabolic (Hagen-Poiseuille) inlet velocity profile — constant in time.
 //
-// A uniform (plug) velocity of 0.0306 m/s is prescribed at the inlet.
-// This corresponds to the Murray's-law-scaled mean flow rate for a 1 mm
-// diameter artery derived from the Holdsworth CCA waveform (biphasic).
+// u(r) = 2·U_mean · (1 − r²/r₀²)
 //
-//   Q_mean_1mm = 6e-6  (0.5/3.   = 2.404e-8 ///sm15)
-//   A          =   (0.        = 7.854e-7 m0005)
-//   U_mean     = Q/A                 = 0.03061  0.0306 m/ss 
+// Parameters:
+//   U_mean = 0.031 m/s   (3.1 cm/s)
+//   U_max  = 0.062 m/s   (centreline peak = 2 · U_mean)
+//   r₀     = 0.0005 m    (vessel radius, 1 mm diameter)
+//   r²     = y² + z²     (radial distance in the y-z cross-section)
 //
-// pimpleFoam iterates toward the steady-state parabolic Hagen-Poiseuille
-// profile without time-marching much faster than for large-Re cases.
-//
-// Expected steady-state:
-//   U_avg    = 0.0306 m/s  (prescribed mean, plug flow)
-//   U_center = 0.0612 m/s  (centreline peak of the Poiseuille parabola)
-//   Re       = U_avg  2R / nu = 0.0306  0.001 / 3. 9.3  ()laminar 6 
-//
-//  9, the flow is well in the Stokes regime. Entry length:Re 
-//    0.06 Entry Re   D = 0.06  9.3   0.56 mm001 
-// The profile is virtually fully developed within the first cell.
+// Re = U_mean · D / ν = 0.031 · 0.001 / 3.3e-6 ≈ 9.4  (very laminar)
 
 dimensions      [0 1 -1 0 0 0 0];
 
-internalField   uniform (0.0306 0 0);
+internalField   uniform (0 0 0);
 
 boundaryField
 {
     inlet
     {
-        type            fixedValue;
-        value           uniform (0.0306 0 0);
+        type            codedFixedValue;
+        value           uniform (0 0 0);   // placeholder — overwritten at runtime
+        name            parabolicInletVelocity;
+
+        code
+        #{
+            const vectorField& Cf   = this->patch().Cf();
+            const scalar       R    = 0.0005;  // vessel radius [m]
+            const scalar       Umax = 0.062;   // 2 * U_mean [m/s]
+
+            vectorField& field = *this;
+            forAll(Cf, faceI)
+            {
+                const scalar r2 = sqr(Cf[faceI].y()) + sqr(Cf[faceI].z());
+                field[faceI] = vector(Umax * (1.0 - r2 / sqr(R)), 0.0, 0.0);
+            }
+        #};
     }
 
     outlet
     {
-        // zeroGradient: fully-developed outflow assumption.
-        // For this near-Stokes steady-state case there is no backflow risk,
-        // so zeroGradient is correct and more numerically robust than inletOutlet.
         type            zeroGradient;
     }
 

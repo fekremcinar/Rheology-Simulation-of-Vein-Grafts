@@ -14,32 +14,26 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Steady-state schemes for pimpleFoam running to steady state.
-// Euler for ddt (1st-order, robust for start-up transient).
-// linearUpwind is more stable than pure central (linear) for PIMPLE
-// while still giving second-order accuracy on structured meshes.
-
 ddtSchemes
 {
-    default         Euler;
+    default         Euler;          // First-order implicit time integration
 }
 
 gradSchemes
 {
     default         Gauss linear;
-    grad(U)         Gauss linear;
 }
 
 divSchemes
 {
     default         none;
-    div(phi,U)      Gauss linearUpwind grad(U);   // bounded 2nd order
-    div((nuEff*dev2(T(grad(U))))) Gauss linear;   // viscous stress (required by simpleFoam)
+    div(phi,U)      Gauss linear;
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;   // viscous stress term (required by pimpleFoam)
 }
 
 laplacianSchemes
 {
-    default         Gauss linear corrected;
+    default         Gauss linear limited 0.5;
 }
 
 interpolationSchemes
@@ -49,7 +43,7 @@ interpolationSchemes
 
 snGradSchemes
 {
-    default         corrected;
+    default         limited 0.5;
 }
 
 // ************************************************************************* //

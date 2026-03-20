@@ -14,13 +14,8 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// simpleFoam uses KINEMATIC pressure: p_kin = p_physical / rho  [m\u00b2/s\u00b2]
-//
-// Velocity-driven setup: pressure is NOT prescribed at the inlet.
-// The solver computes the pressure drop required to sustain the inlet velocity.
-//
-// At steady state (fully developed Hagen-Poiseuille), the expected \u0394p_kin \u2248 0.01057 m\u00b2/s\u00b2
-// (= 11.2 Pa = 0.084 mmHg) across L = 0.1 m.
+// Kinematic pressure (p/rho), units: m²/s²
+// Outlet is set to zero reference; inlet pressure develops from the flow.
 
 dimensions      [0 2 -2 0 0 0 0];
 

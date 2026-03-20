@@ -14,26 +14,6 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Experiment 02 -- Biphasic Pulsatile Heartbeat in a 1 mm Straight Tube
-//
-// Solver: pimpleFoam (transient incompressible)
-//
-// Vessel: r = 0.5 mm, D = 1 mm, L = 10 mm
-// Cardiac parameters:
-//   T           = 0.857 s      (70 bpm)
-//   Q_mean      = 2.404e-8 m3/s (CCA->1mm via Murray: 6e-6 * (0.5/3.15)^3)
-//   U_mean      = 0.0306 m/s   (Q_mean / A = 2.404e-8 / 7.854e-7)
-//   U_center_pk = 0.240 m/s    (2 * Q_peak / A, centreline parabolic)
-//   Re_mean     = 9.3          (U_mean * D / nu = 0.0306 * 0.001 / 3.3e-6)
-//   Re_peak     = 36           (U_mean_peak * D / nu)
-//   Womersley   = 0.745        (quasi-Poiseuille, parabolic profile justified)
-//
-// Time step: dt = 0.0005 s -> 1714 steps per cycle, 8570 total (5 cycles).
-//   CFL_axial_peak = U_center_peak * dt / dx = 0.240 * 0.0005 / 0.00025 = 0.48  (< 1 ✓)
-//   With nOuterCorrectors=1 (PISO mode), CFL < 1 guarantees stability.
-//
-// libs: required for codedFixedValue inlet BC (runtime C++ compilation).
-
 application     pimpleFoam;
 
 startFrom       startTime;
@@ -41,16 +21,15 @@ startTime       0;
 
 stopAt          endTime;
 
-// Run for 3 cardiac cycles: endTime = 3 × 0.857 = 2.571 s
-endTime         2.571;
+// Run for ~10 s — well beyond the viscous diffusion time (r²/nu ≈ 7.6 s)
+// so the Poiseuille profile is fully established throughout the tube.
+endTime         10;
 
-// deltaT = 0.0005 s → 1714 steps/cycle, 10000 steps total.
-//   CFL_axial_mean = U_mean * dt / dx = 0.0306 * 0.0005 / 0.00025 = 0.061  (< 1 ✓)
-//   CFL_axial_peak = U_center_pk * dt / dx = 0.240 * 0.0005 / 0.00025 = 0.48  (< 1 ✓)
-deltaT          0.0005;
+// deltaT = 0.01 s  →  Courant = U*dt/dx = 0.1*0.01/0.005 = 0.2  (< 1 ✓)
+deltaT          0.01;
 
 writeControl    runTime;
-writeInterval   0.013;      // 2.571 / 0.013 ≈ 198 snapshots over 3 cycles (~200)
+writeInterval   0.2;        // save a snapshot every 0.2 s → 50 output times
 
 purgeWrite      0;
 writeFormat     ascii;
@@ -61,9 +40,6 @@ timeFormat      general;
 timePrecision   6;
 
 runTimeModifiable true;
-
-// Required for codedFixedValue (runtime C++ compilation of biphasic inlet BC)
-libs ("libutilityFunctionObjects.so");
 
 // ── Function objects: hemodynamic metrics ────────────────────────────────────
 //
@@ -85,17 +61,16 @@ libs ("libutilityFunctionObjects.so");
 functions
 {
     // ── Q(t): volumetric flow rate ────────────────────────────────────────
-    // Written every time step (cheap scalar) for full Q(t) waveform resolution.
-    // ~1714 points/cycle → smooth waveform in ParaView plots.
+    // phi is the face flux [m^3/s]; sum over patch = total Q.
+    // Sign convention: negative at inlet (flux into domain), positive at outlet.
 
     flowRateInlet
     {
         type            surfaceFieldValue;
         libs            ("libfieldFunctionObjects.so");
-        executeControl  timeStep;
         writeControl    timeStep;
-        writeInterval   1;
-        log             false;
+        writeInterval   20;     // every 20 steps → 50 outputs for 1000 total steps
+        log             true;
         writeFields     false;
         regionType      patch;
         name            inlet;
@@ -107,10 +82,9 @@ functions
     {
         type            surfaceFieldValue;
         libs            ("libfieldFunctionObjects.so");
-        executeControl  timeStep;
         writeControl    timeStep;
-        writeInterval   1;
-        log             false;
+        writeInterval   20;     // every 20 steps → 50 outputs for 1000 total steps
+        log             true;
         writeFields     false;
         regionType      patch;
         name            outlet;
@@ -119,16 +93,16 @@ functions
     }
 
     // ── ΔP(t): pressure drop across the tube ─────────────────────────────
-    // Written every time step for full time-resolved pressure waveform.
+    // Kinematic pressure (p/rho). Multiply by rho=1060 for Pa.
+    // ΔP = pAvgInlet - pAvgOutlet  (outlet is fixed at 0 reference)
 
     pAvgInlet
     {
         type            surfaceFieldValue;
         libs            ("libfieldFunctionObjects.so");
-        executeControl  timeStep;
         writeControl    timeStep;
-        writeInterval   1;
-        log             false;
+        writeInterval   20;     // every 20 steps → 50 outputs for 1000 total steps
+        log             true;
         writeFields     false;
         regionType      patch;
         name            inlet;
@@ -140,10 +114,9 @@ functions
     {
         type            surfaceFieldValue;
         libs            ("libfieldFunctionObjects.so");
-        executeControl  timeStep;
         writeControl    timeStep;
-        writeInterval   1;
-        log             false;
+        writeInterval   20;     // every 20 steps → 50 outputs for 1000 total steps
+        log             true;
         writeFields     false;
         regionType      patch;
         name            outlet;
@@ -154,16 +127,15 @@ functions
     // ── WSS field: wall shear stress vector on the wall patch ─────────────
     // Output: volVectorField "wallShearStress" in each time directory.
     // Units: kinematic [m^2/s^2].  Physical WSS [Pa] = rho * wallShearStress.
-    // Expected steady-state: |WSS| = 4*nu*U_mean/r = 4*3.3e-6*0.031/0.0005 = 8.18e-4 m^2/s^2
-    //                               => 1060 * 8.18e-4 = 0.867 Pa
+    // Expected steady-state: |WSS| = 4*nu*U_mean/r = 4*3.3e-6*0.1/0.005 = 2.64e-4 m^2/s^2
+    //                               => 1060 * 2.64e-4 = 0.28 Pa
 
     wallShearStress
     {
         type            wallShearStress;
         libs            ("libfieldFunctionObjects.so");
-        executeControl  writeTime;
-        writeControl    writeTime;
-        log             false;
+        writeControl    timeStep;
+        writeInterval   20;     // every 20 steps → 50 outputs for 1000 total steps
         patches         (wall);
     }
 
@@ -176,9 +148,7 @@ functions
     {
         type            fieldAverage;
         libs            ("libfieldFunctionObjects.so");
-        executeControl  writeTime;
         writeControl    writeTime;
-        log             false;
         fields
         (
             U

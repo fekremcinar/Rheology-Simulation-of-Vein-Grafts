@@ -14,37 +14,30 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Transient pulsatile schemes for pimpleFoam.
-//
-// CrankNicolson 0.9 for ddt: second-order temporal accuracy is important
-// here because we are resolving the cardiac waveform in time. The blending
-// coefficient 0.9 gives near-CN accuracy while avoiding the odd-even
-// pressure oscillations of pure CN (coefficient = 1.0).
-//
-// linearUpwind for div: bounded second-order; well-suited to structured
-// O-grid meshes and prevents spurious oscillations near the axis.
+// Schemes aligned with 01_simple_laminar.
+// Gauss linear for div(phi,U): central differencing, 2nd order, unbounded.
+// Safe for this case — Re_peak = 36 (very laminar), no risk of oscillations.
 
 ddtSchemes
 {
-    default         CrankNicolson 0.9;
+    default         Euler;
 }
 
 gradSchemes
 {
     default         Gauss linear;
-    grad(U)         Gauss linear;
 }
 
 divSchemes
 {
     default         none;
-    div(phi,U)      Gauss linearUpwind grad(U);
+    div(phi,U)      Gauss linear;
     div((nuEff*dev2(T(grad(U))))) Gauss linear;
 }
 
 laplacianSchemes
 {
-    default         Gauss linear corrected;
+    default         Gauss linear limited 0.5;
 }
 
 interpolationSchemes
@@ -54,7 +47,7 @@ interpolationSchemes
 
 snGradSchemes
 {
-    default         corrected;
+    default         limited 0.5;
 }
 
 // ************************************************************************* //

@@ -18,34 +18,26 @@ FoamFile
 //
 // Solver: pimpleFoam (transient incompressible)
 //
-// A pulsatile parabolic inlet waveform (triphasic, peripheral/femoral territory)
-// drives the flow for 5 cardiac cycles. The Mikheev SFA waveform is scaled
-// to 1 mm artery via Murray's cube law. This waveform includes flow reversal
-// in early  a key feature of peripheral arteries at rest.diastole 
-// The first 3 cycles are discarded (initialisation transient); OSI, TAWSS
-// and RRT are computed over the final 2 cycles (t = 2.571 s to 4.285 s).
-//
 // Vessel: r = 0.5 mm, D = 1 mm, L = 10 mm
 // Cardiac parameters:
-//   T       = 0.857 s   (70 bpm)
-//   Q_mean  = 1.656e-8 ///s  (from SFA via Murray's law: 2.07e-6M(0.5/2.)))5)
-//   U_mean  = 0.02109 m/s  (Q_mean / A = 1.656e-8 / 7.854e-7)
-//    12 Peak Q_mean  (systolic peak, AU=12)  
-3.2  Q_mean  (maximum flow reversal at ~35% of cycle)
-//    6.4,   77peak mean 
-////   Womersley 
-// Waveform source: Mikheev et al. (2020), J. Phys.: Conf. Series 1683:022090.
-//   Physical simulation of femoral artery flow. AU =  12.Umean 
+//   T           = 0.857 s      (70 bpm)
+//   Q_mean      = 1.656e-8 m3/s (SFA->1mm via Murray: 2.07e-6 * (0.5/2.5)^3)
+//   U_mean      = 0.02109 m/s  (Q_mean / A = 1.656e-8 / 7.854e-7)
+//   U_center_pk = 0.506 m/s    (2 * Q_peak / A, Q_norm_peak = 12)
+//   U_center_min= -0.135 m/s   (flow reversal, Q_norm_min = -3.2)
+//   Re_mean     = 6.4          (U_mean * D / nu = 0.02109 * 0.001 / 3.3e-6)
+//   Re_peak     = 77           (U_mean_peak * D / nu)
+//   Womersley   = 0.745        (quasi-Poiseuille, parabolic profile justified)
 //
-// Note on flow reversal: During the reversal phase, the inlet acts as an
-// outflow boundary (u < 0). The outlet (with zeroGradient) acts as inflow.
-// This is physically correct for triphasic waveforms. Both patches use
-// zeroGradient to avoid blocking reversed flow.
+// TRIPHASIC: forward systolic peak, early-diastolic flow reversal, diastolic decay.
+// Flow reversal inlet acts as outflow; outlet (zeroGradient) acts as inflow.
 //
- ~171 steps per cycle.
- ~43 snapshots per cycle.
+// Time step: dt = 0.0004 s → 2143 steps/cycle, 6428 total (3 cycles).
+//   CFL_axial_mean = U_mean * dt / dx = 0.021 * 0.0004 / 0.00025 = 0.034  (< 1 ✓)
+//   CFL_axial_peak = U_center_pk * dt / dx = 0.506 * 0.0004 / 0.00025 = 0.81 (< 1 ✓)
+//   dt=0.0004 chosen (vs 0.0005) to keep CFL < 1 at peak systole for PISO stability.
 //
-// libs entry: required for the codedFixedValue inlet BC (runtime compilation).
+// libs: required for codedFixedValue inlet BC (runtime C++ compilation).
 
 application     pimpleFoam;
 
@@ -53,12 +45,15 @@ startFrom       startTime;
 startTime       0;
 
 stopAt          endTime;
-endTime         4.285;      // 5 x T = 5 x 0.857 s
 
-deltaT          0.005;      // 171 steps/cycle
+// Run for 3 cardiac cycles: endTime = 3 × 0.857 = 2.571 s
+endTime         2.571;
+
+// deltaT = 0.0004 s → CFL_peak = 0.81 (< 1 ✓)
+deltaT          0.0004;
 
 writeControl    runTime;
-writeInterval   0.02;       // 43 snapshots/ needed for accurate OSI/TAWSScycle 
+writeInterval   0.0128;     // 2.571 / 0.0128 ≈ 201 snapshots over 3 cycles (~200)
 
 purgeWrite      0;
 writeFormat     ascii;
@@ -70,16 +65,21 @@ timePrecision   6;
 
 runTimeModifiable true;
 
-// Required for codedFixedValue (runtime C++ compilation of inlet BC)
+// Required for codedFixedValue (runtime C++ compilation of triphasic inlet BC)
 libs ("libutilityFunctionObjects.so");
 
- Function objects // 
+// ── Function objects: hemodynamic metrics ────────────────────────────────────
 functions
 {
+    // ── Q(t): volumetric flow rate ────────────────────────────────────────
+    // Written every time step (cheap scalar) for full Q(t) waveform resolution.
+    // Note: during reversal phase inlet phi > 0 (outflow), outlet phi < 0.
+
     flowRateInlet
     {
         type            surfaceFieldValue;
         libs            ("libfieldFunctionObjects.so");
+        executeControl  timeStep;
         writeControl    timeStep;
         writeInterval   1;
         log             false;
@@ -94,6 +94,7 @@ functions
     {
         type            surfaceFieldValue;
         libs            ("libfieldFunctionObjects.so");
+        executeControl  timeStep;
         writeControl    timeStep;
         writeInterval   1;
         log             false;
@@ -104,17 +105,80 @@ functions
         fields          (phi);
     }
 
-    pressureProbes
+    // ── ΔP(t): pressure drop across the tube ─────────────────────────────
+    // Kinematic pressure (p/rho). Multiply by rho=1060 for Pa.
+
+    pAvgInlet
     {
-        type            probes;
-        libs            ("libsampling.so");
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  timeStep;
         writeControl    timeStep;
         writeInterval   1;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            inlet;
+        operation       areaAverage;
         fields          (p);
-        probeLocations
+    }
+
+    pAvgOutlet
+    {
+        type            surfaceFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  timeStep;
+        writeControl    timeStep;
+        writeInterval   1;
+        log             false;
+        writeFields     false;
+        regionType      patch;
+        name            outlet;
+        operation       areaAverage;
+        fields          (p);
+    }
+
+    // ── WSS field: wall shear stress vector on the wall patch ─────────────
+
+    wallShearStress
+    {
+        type            wallShearStress;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  writeTime;
+        writeControl    writeTime;
+        log             false;
+        patches         (wall);
+    }
+
+    // ── Time-averaged fields → TAWSS base ────────────────────────────────
+
+    fieldAverage
+    {
+        type            fieldAverage;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  writeTime;
+        writeControl    writeTime;
+        log             false;
+        fields
         (
-            (0.0025  0  0)   // probe 0 -- quarter-length   (x/L = 0.25)
-            (0.0075  0  0)   // probe 1 -- three-quarter-length (x/L = 0.75)
+            U
+            {
+                mean        on;
+                prime2Mean  off;
+                base        time;
+            }
+            p
+            {
+                mean        on;
+                prime2Mean  off;
+                base        time;
+            }
+            wallShearStress
+            {
+                mean        on;
+                prime2Mean  off;
+                base        time;
+            }
         );
     }
 }

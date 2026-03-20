@@ -35,7 +35,7 @@ solvers
         solver          smoothSolver;
         smoother        symGaussSeidel;
         tolerance       1e-05;
-        relTol          0.1;
+        relTol          0;
     }
 
     UFinal
@@ -47,12 +47,10 @@ solvers
 
 PIMPLE
 {
-    // nOuterCorrectors = 2: required because peak axial CFL ~ 1.0 at systole.
-    // One outer corrector (pure PISO) can become unstable at CFL >= 1.
-    // Two correctors provide the stability margin without excessive cost.
-    nOuterCorrectors    2;
-    nCorrectors         2;
+    nOuterCorrectors        1;   // 1 = PISO mode; CFL < 1 with fixed dt = 0.0005 s
+    nCorrectors             2;
     nNonOrthogonalCorrectors 1;
+    // pRefCell/pRefValue omitted: pressure level is fixed by outlet fixedValue 0
 }
 
 // ************************************************************************* //
